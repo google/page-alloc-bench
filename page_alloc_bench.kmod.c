@@ -7,4 +7,4 @@ static int __init page_alloc_bench_init(void)
 }
 module_init(page_alloc_bench_init);
 
-MODULE_LICENSE("gpl");
+MODULE_LICENSE("GPL");
