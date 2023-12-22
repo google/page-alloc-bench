@@ -1,12 +1,47 @@
 package main
 
 import (
+	"context"
 	"fmt"
+	"log"
 	"os"
+	"runtime"
+	"slices"
+	"sync"
 	"syscall"
+	"time"
 	"unsafe"
 )
 
+// Note that sched_setaffinity(2) is documenting the libc wrapper not
+// the syscall, we don't need to worry about cpu_set_t (although I
+// suspect it's equivalent to a raw cpumask anyway).
+type cpuMask []uint64
+
+func newCPUMask(cpus ...int) cpuMask {
+	maxCPU := slices.Max(cpus)
+	mask := make([]uint64, (maxCPU/64)+1)
+	for cpu, _ := range cpus {
+		mask[cpu/64] |= 1 << (cpu % 64)
+	}
+	return mask
+}
+
+const pidCallingThread = 0 // For schedSetAffinity
+
+// Syscall wrapper
+func schedSetaffinity(pid int, mask cpuMask) error {
+	size := uintptr(8 * len(mask))
+	maskData := uintptr(unsafe.Pointer(unsafe.SliceData(mask)))
+	_, _, err := syscall.Syscall(syscall.SYS_SCHED_GETAFFINITY, 0, size, maskData)
+
+	if err != 0 {
+		return fmt.Errorf("sched_setaffinity(%d, %+v): %v", pid, mask, err)
+	}
+	return nil
+}
+
+// Syscall wrapper
 func ioctl(file *os.File, cmd, arg uintptr) error {
 	_, _, err := syscall.Syscall(syscall.SYS_IOCTL, file.Fd(), cmd, arg)
 	if err != 0 {
@@ -46,12 +81,30 @@ func doMain() error {
 	kmod := kmod{file}
 	defer kmod.Close()
 
-	page, err := kmod.allocPage()
-	if err != nil {
-		return err
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	var wg sync.WaitGroup
+	for cpu := 0; cpu < runtime.NumCPU(); cpu++ {
+		wg.Add(1)
+		go func() {
+			// This means that the goroutine gets the thread to
+			// itself and the thread never gets migrated between
+			// goroutines. IOW the goroutine "is a thread".
+			runtime.LockOSThread()
+
+			cpuMask := newCPUMask(cpu)
+			err := schedSetaffinity(pidCallingThread, cpuMask)
+			if err != nil {
+				// TODO: error handling (note sync/errgroup is not in the stdlib yet)
+				log.Fatalf("schedSetaffinity(%+v): %c", cpuMask, err)
+			}
+
+			<-ctx.Done()
+			wg.Done()
+		}()
 	}
-	fmt.Printf("%x\n", page)
-	defer kmod.freePage(page)
+
+	wg.Wait()
 	return nil
 }
 
@@ -60,4 +113,5 @@ func main() {
 		fmt.Fprintf(os.Stderr, "%v\n", err)
 		os.Exit(1)
 	}
+	fmt.Printf("Done")
 }
