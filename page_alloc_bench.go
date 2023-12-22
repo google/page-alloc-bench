@@ -89,7 +89,10 @@ func (s *stats) String() string {
 	return fmt.Sprintf("allocated=%d freed=%d", s.pagesAllocated.Load(), s.pagesFreed.Load())
 }
 
-var totalMemoryFlag = flag.Uint64("total-memory", 256*megabyte, "Total memory to allocate in bytes")
+var (
+	totalMemoryFlag = flag.Uint64("total-memory", 256*megabyte, "Total memory to allocate in bytes")
+	timeoutSFlag    = flag.Int("timeout-s", 10, "Timeout in seconds. Set 0 for no timeout")
+)
 
 // A workload that allocates and the frees a bunch of pages on every CPU.
 type workload struct {
@@ -144,8 +147,12 @@ func doMain() error {
 	}
 	fmt.Printf("Started %d threads, each allocating %d pages\n", runtime.NumCPU(), workload.pagesPerCPU)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
+	ctx := context.Background()
+	if *timeoutSFlag != 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, time.Duration(*timeoutSFlag)*time.Second)
+		defer cancel()
+	}
 	// The WaitGroup + errCh is a poor-man's sync.ErrGroup, that isn't in
 	// the proper stdlib yet, and it doesn't seem worth throwing away the
 	// no-Go-dependencies thing for that.
