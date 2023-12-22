@@ -4,32 +4,32 @@
 #include <linux/module.h>
 #include <linux/proc_fs.h>
 
-#define NAME "page_alloc_bench"
+#define NAME "pab"
 
-static struct proc_dir_entry *procfs_file;
-
-static long page_alloc_bench_ioctl(struct file *filp, unsigned int request, unsigned long argp) {
+static long pab_ioctl(struct file *filp, unsigned int request, unsigned long argp) {
 	return 0;
 }
 
 static struct proc_ops proc_ops = {
-	.proc_ioctl = page_alloc_bench_ioctl,
+	.proc_ioctl = pab_ioctl,
 	.proc_open = nonseekable_open,
 	.proc_lseek = no_llseek,
 };
 
-static int __init page_alloc_bench_init(void)
+static struct proc_dir_entry *procfs_file;
+
+static int __init pab_init(void)
 {
 	procfs_file = proc_create(NAME, 0, NULL, &proc_ops);
 
 	return 0;
 }
-module_init(page_alloc_bench_init);
+module_init(pab_init);
 
-static void __exit page_alloc_bench_exit(void)
+static void __exit pab_exit(void)
 {
 	proc_remove(procfs_file);
 }
-module_exit(page_alloc_bench_exit);
+module_exit(pab_exit);
 
 MODULE_LICENSE("GPL");
