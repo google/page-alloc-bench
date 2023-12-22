@@ -7,9 +7,9 @@
 
 #define NAME "page_alloc_bench"
 
-#define PAB_IOCTL 'P'
-#define PAB_IOCTL_ALLOC_PAGE	_IOR(PAB_IOCTL, 1, struct page *)
-#define PAB_IOCTL_FREE_PAGE 	_IOW(PAB_IOCTL, 1, struct page *)
+/* IDs need to be manually synced with the Go file */
+#define PAB_IOCTL_ALLOC_PAGE	0x12340001
+#define PAB_IOCTL_FREE_PAGE 	0x12340002
 
 static long pab_ioctl(struct file *file, unsigned int cmd, unsigned long arg) {
 	switch (cmd) {

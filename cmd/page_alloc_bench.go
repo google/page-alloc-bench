@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"syscall"
+	"unsafe"
 )
 
 func ioctl(file *os.File, cmd, arg uintptr) error {
@@ -14,13 +15,44 @@ func ioctl(file *os.File, cmd, arg uintptr) error {
 	return nil
 }
 
+const (
+	// Needs to be manually synced with the C file
+	PAB_IOCTL_ALLOC_PAGE = 0x12340001
+	PAB_IOCTL_FREE_PAGE  = 0x12340002
+)
+
+type kmod struct {
+	*os.File
+}
+
+// Opaque ID for a page.
+type page uintptr
+
+func (k *kmod) allocPage() (page, error) {
+	var page page
+	err := ioctl(k.File, PAB_IOCTL_ALLOC_PAGE, uintptr(unsafe.Pointer(&page)))
+	return page, err
+}
+
+func (k *kmod) freePage(page page) error {
+	return ioctl(k.File, PAB_IOCTL_FREE_PAGE, uintptr(page))
+}
+
 func doMain() error {
 	file, err := os.Open("/proc/page_alloc_bench")
 	if err != nil {
 		return fmt.Errorf("Opening /proc/page_alloc_bench: %v", err)
 	}
-	defer file.Close()
-	return ioctl(file, 1, 2)
+	kmod := kmod{file}
+	defer kmod.Close()
+
+	page, err := kmod.allocPage()
+	if err != nil {
+		return err
+	}
+	fmt.Printf("%x\n", page)
+	defer kmod.freePage(page)
+	return nil
 }
 
 func main() {
