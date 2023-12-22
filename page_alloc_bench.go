@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"log"
 	"os"
 	"runtime"
 	"slices"
@@ -83,7 +82,12 @@ func doMain() error {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
+	// The WaitGroup + errCh is a poor-man's
+	// https://pkg.go.dev/golang.org/x/sync/errgroup because that isn't in
+	// the proper stdlib yet, and it doesn't seem worth throwing away the
+	// no-Go-dependencies thing for that.
 	var wg sync.WaitGroup
+	errCh := make(chan error)
 	for cpu := 0; cpu < runtime.NumCPU(); cpu++ {
 		wg.Add(1)
 		go func() {
@@ -95,8 +99,7 @@ func doMain() error {
 			cpuMask := newCPUMask(cpu)
 			err := schedSetaffinity(pidCallingThread, cpuMask)
 			if err != nil {
-				// TODO: error handling (note sync/errgroup is not in the stdlib yet)
-				log.Fatalf("schedSetaffinity(%+v): %c", cpuMask, err)
+				errCh <- fmt.Errorf("schedSetaffinity(%+v): %c", cpuMask, err)
 			}
 
 			<-ctx.Done()
@@ -104,8 +107,18 @@ func doMain() error {
 		}()
 	}
 
-	wg.Wait()
-	return nil
+	done := make(chan any)
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		return nil
+	case err := <-errCh:
+		return err
+	}
 }
 
 func main() {
