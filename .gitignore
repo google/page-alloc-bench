@@ -168,3 +168,5 @@ sphinx_*/
 
 # Rust analyzer configuration
 /rust-project.json
+
+cmd/page_alloc_bench
