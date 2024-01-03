@@ -23,33 +23,10 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-	"unsafe"
 
+	"github.com/google/page_alloc_bench/kmod"
 	"github.com/google/page_alloc_bench/linux"
 )
-
-const (
-	// Needs to be manually synced with the C file
-	PAB_IOCTL_ALLOC_PAGE = 0x12340001
-	PAB_IOCTL_FREE_PAGE  = 0x12340002
-)
-
-type kmod struct {
-	*os.File
-}
-
-// Opaque ID for a page.
-type page uintptr
-
-func (k *kmod) allocPage() (page, error) {
-	var page page
-	err := linux.Ioctl(k.File, PAB_IOCTL_ALLOC_PAGE, uintptr(unsafe.Pointer(&page)))
-	return page, err
-}
-
-func (k *kmod) freePage(page page) error {
-	return linux.Ioctl(k.File, PAB_IOCTL_FREE_PAGE, uintptr(page))
-}
 
 const (
 	kilobyte = 1024
@@ -73,7 +50,7 @@ var (
 
 // A workload that allocates and the frees a bunch of pages on every CPU.
 type workload struct {
-	kmod        *kmod
+	kmod        *kmod.Connection
 	stats       *stats
 	pagesPerCPU uint64
 }
@@ -81,11 +58,11 @@ type workload struct {
 // per-CPU element of a workload. Assumes that the calling goroutine is already
 // pinned to an appropriate CPU.
 func (w *workload) runCPU(ctx context.Context) error {
-	var pages []page
+	var pages []kmod.Page
 
 	defer func() {
 		for _, page := range pages {
-			w.kmod.freePage(page)
+			w.kmod.FreePage(page)
 			w.stats.pagesFreed.Add(1)
 		}
 	}()
@@ -95,7 +72,7 @@ func (w *workload) runCPU(ctx context.Context) error {
 			return err
 		}
 
-		page, err := w.kmod.allocPage()
+		page, err := w.kmod.AllocPage()
 		if err != nil {
 			return fmt.Errorf("allocating page %d: %v", i, err)
 		}
@@ -112,7 +89,7 @@ func doMain() error {
 	if err != nil {
 		return fmt.Errorf("Opening /proc/page_alloc_bench: %v", err)
 	}
-	kmod := kmod{file}
+	kmod := kmod.Connection{file}
 	defer kmod.Close()
 
 	var stats stats
