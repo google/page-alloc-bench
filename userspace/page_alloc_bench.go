@@ -20,50 +20,13 @@ import (
 	"fmt"
 	"os"
 	"runtime"
-	"slices"
 	"sync"
 	"sync/atomic"
-	"syscall"
 	"time"
 	"unsafe"
+
+	"github.com/google/page_alloc_bench/linux"
 )
-
-// Note that sched_setaffinity(2) is documenting the libc wrapper not
-// the syscall, we don't need to worry about cpu_set_t (although I
-// suspect it's equivalent to a raw cpumask anyway).
-type cpuMask []uint64
-
-func newCPUMask(cpus ...int) cpuMask {
-	maxCPU := slices.Max(cpus)
-	mask := make([]uint64, (maxCPU/64)+1)
-	for cpu, _ := range cpus {
-		mask[cpu/64] |= 1 << (cpu % 64)
-	}
-	return mask
-}
-
-const pidCallingThread = 0 // For schedSetAffinity
-
-// Syscall wrapper
-func schedSetaffinity(pid int, mask cpuMask) error {
-	size := uintptr(8 * len(mask))
-	maskData := uintptr(unsafe.Pointer(unsafe.SliceData(mask)))
-	_, _, err := syscall.Syscall(syscall.SYS_SCHED_GETAFFINITY, 0, size, maskData)
-
-	if err != 0 {
-		return fmt.Errorf("sched_setaffinity(%d, %+v): %v", pid, mask, err)
-	}
-	return nil
-}
-
-// Syscall wrapper
-func ioctl(file *os.File, cmd, arg uintptr) error {
-	_, _, err := syscall.Syscall(syscall.SYS_IOCTL, file.Fd(), cmd, arg)
-	if err != 0 {
-		return fmt.Errorf("ioctl 0x%x 0x%x on %s: %v\n", cmd, arg, file.Name(), err)
-	}
-	return nil
-}
 
 const (
 	// Needs to be manually synced with the C file
@@ -80,12 +43,12 @@ type page uintptr
 
 func (k *kmod) allocPage() (page, error) {
 	var page page
-	err := ioctl(k.File, PAB_IOCTL_ALLOC_PAGE, uintptr(unsafe.Pointer(&page)))
+	err := linux.Ioctl(k.File, PAB_IOCTL_ALLOC_PAGE, uintptr(unsafe.Pointer(&page)))
 	return page, err
 }
 
 func (k *kmod) freePage(page page) error {
-	return ioctl(k.File, PAB_IOCTL_FREE_PAGE, uintptr(page))
+	return linux.Ioctl(k.File, PAB_IOCTL_FREE_PAGE, uintptr(page))
 }
 
 const (
@@ -180,8 +143,8 @@ func doMain() error {
 			// goroutines. IOW the goroutine "is a thread".
 			runtime.LockOSThread()
 
-			cpuMask := newCPUMask(cpu)
-			err := schedSetaffinity(pidCallingThread, cpuMask)
+			cpuMask := linux.NewCPUMask(cpu)
+			err := linux.SchedSetaffinity(linux.PIDCallingThread, cpuMask)
 			if err != nil {
 				errCh <- fmt.Errorf("schedSetaffinity(%+v): %c", cpuMask, err)
 			}
