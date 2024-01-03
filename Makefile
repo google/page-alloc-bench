@@ -16,6 +16,11 @@ page_alloc_bench.run: .makeself-build/run.sh .makeself-build/page_alloc_bench .m
 page_alloc_bench.ko: page_alloc_bench.kmod.c Kbuild
 	$(MAKE) -C $(KDIR) M=$$PWD modules
 
+# Separate optional target since it will to build unless KDIR has been set to a
+# full kernel tree.
+compile_commands.json: page_alloc_bench.ko
+	$(MAKE) -C $(KDIR) M=$$PWD
+
 page_alloc_bench: page_alloc_bench.go
 	go build -o $@ page_alloc_bench.go
 

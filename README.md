@@ -24,6 +24,9 @@ with clang add `LLVM=1`. In theory I think you should only have to have done
 sometimes have to completely build the kernel for this to work (this issue might
 be unique to Google's kernel fork though).
 
+Whe you're using a full kernel tree via `KDIR` you can also build the
+`compile_commands.json` target to make clangd work on the kmod code.
+
 You can build the `page_alloc_bench.run` target to build a self-extracting
 binary with `makeself`. This isn't in the default target, you need to explicitly
 list it as the make goal. You can then copy this onto some other system, running
