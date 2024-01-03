@@ -10,7 +10,7 @@ all: page_alloc_bench page_alloc_bench.ko
 # Note the `./` before run.sh is necessary because that also becomes the command
 # that the embedded script runs, so without it this won't work on systems where
 # '.' is not in $PATH.
-page_alloc_bench.run: .makeself-build/run.sh .makeself-build/page_alloc_bench .makeself-build/page_alloc_bench.ko
+page_alloc_bench.run: $(addprefix .makeself-build/, run.sh page_alloc_bench page_alloc_bench.ko)
 	makeself .makeself-build page_alloc_bench.run "page_alloc_bench" ./run.sh
 
 page_alloc_bench.ko: page_alloc_bench.kmod.c Kbuild
