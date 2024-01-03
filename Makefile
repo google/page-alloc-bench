@@ -1,6 +1,6 @@
 KDIR ?= /lib/modules/`uname -r`/build
 
-all: page_alloc_bench page_alloc_bench.ko
+all: userspace/page_alloc_bench kmod/page_alloc_bench.ko
 
 .makeself-build/%: %
 	@mkdir -p $$(dirname $@)
@@ -10,23 +10,24 @@ all: page_alloc_bench page_alloc_bench.ko
 # Note the `./` before run.sh is necessary because that also becomes the command
 # that the embedded script runs, so without it this won't work on systems where
 # '.' is not in $PATH.
-page_alloc_bench.run: $(addprefix .makeself-build/, run.sh page_alloc_bench page_alloc_bench.ko)
+page_alloc_bench.run: $(addprefix .makeself-build/, run.sh userspace/page_alloc_bench kmod/page_alloc_bench.ko)
 	makeself .makeself-build page_alloc_bench.run "page_alloc_bench" ./run.sh
 
-page_alloc_bench.ko: page_alloc_bench.kmod.c Kbuild
-	$(MAKE) -C $(KDIR) M=$$PWD modules
+kmod/page_alloc_bench.ko: $(addprefix kmod/, page_alloc_bench.c Kbuild)
+	$(MAKE) -C $(KDIR) M=$$PWD/kmod modules
 
 # Separate optional target since it will to build unless KDIR has been set to a
 # full kernel tree.
-compile_commands.json: page_alloc_bench.ko
-	$(MAKE) -C $(KDIR) M=$$PWD
+kmod/compile_commands.json: kmod/page_alloc_bench.ko
+	$(MAKE) -C $(KDIR) M=$$PWD/kmod
 
-page_alloc_bench: page_alloc_bench.go
-	go build -o $@ page_alloc_bench.go
+.PHONY: userspace/page_alloc_bench
+userspace/page_alloc_bench:
+	cd userspace; go build .
 
 .PHONY: clean
 clean:
-	$(RM) page_alloc_bench
-	$(MAKE) -C $(KDIR) M=$$PWD clean
+	$(RM) userspace/page_alloc_bench
+	$(MAKE) -C $(KDIR) M=$$PWD/kmod clean
 	$(RM) -rf .makeself-build
 	$(RM) page_alloc_bench.run
