@@ -18,6 +18,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"runtime"
 	"sync"
@@ -40,7 +41,7 @@ type stats struct {
 }
 
 func (s *stats) String() string {
-	return fmt.Sprintf("allocated=%d freed=%d", s.pagesAllocated.Load(), s.pagesFreed.Load())
+	return fmt.Sprintf("pagesAllocated=%d pagesFreed=%d ", s.pagesAllocated.Load(), s.pagesFreed.Load())
 }
 
 var (
@@ -53,6 +54,65 @@ type workload struct {
 	kmod        *kmod.Connection
 	stats       *stats
 	pagesPerCPU uint64
+	cleanups    []func()
+}
+
+// cleanup is like testing.T.Cleanup.
+func (w *workload) cleanup(f func()) {
+	w.cleanups = append(w.cleanups, f)
+}
+
+func (w *workload) runCleanups() {
+	for _, f := range w.cleanups {
+		f()
+	}
+}
+
+// io.Reader that produces some sort of bytes that aren't all the same value.
+// Can't use rand due to https://github.com/golang/go/issues/64943
+type variedReader struct {
+	i byte
+}
+
+func (r *variedReader) Read(p []byte) (n int, err error) {
+	for o := 0; o < len(p); o++ {
+		p[o] = r.i
+		if r.i == 255 {
+			r.i = 0
+		} else {
+			r.i++
+		}
+	}
+	return len(p), nil
+}
+
+// Initial setup part of a workload - run only once on the system.
+func (w *workload) setup(ctx context.Context) error {
+	// Create a bunch of page cache data.
+
+	f, err := os.CreateTemp("", "")
+	if err != nil {
+		return fmt.Errorf("making tempfile: %v", err)
+	}
+	w.cleanup(func() { os.Remove(f.Name()) })
+
+	// Close the file when the context is canceled, to abort the io.Copy. This
+	// probably won't shut down cleanly, although this logic could be extended
+	// to do so if necessary. Note also the f.Close races with the os.Remove,
+	// this is harmless.
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	go func() {
+		<-ctx.Done()
+		f.Close()
+	}()
+
+	// Write a bunch of bytes that aren't just all zero or whatever.
+	_, err = io.Copy(f, &io.LimitedReader{&variedReader{}, 1 * gigabyte})
+	if err != nil {
+		return fmt.Errorf("writing data to populate page cache: %v", err)
+	}
+	return nil
 }
 
 // per-CPU element of a workload. Assumes that the calling goroutine is already
@@ -99,7 +159,7 @@ func doMain() error {
 		stats:       &stats,
 		pagesPerCPU: (*totalMemoryFlag / uint64(os.Getpagesize())) / uint64(runtime.NumCPU()),
 	}
-	fmt.Printf("Started %d threads, each allocating %d pages\n", runtime.NumCPU(), workload.pagesPerCPU)
+	defer workload.runCleanups()
 
 	ctx := context.Background()
 	if *timeoutSFlag != 0 {
@@ -107,6 +167,12 @@ func doMain() error {
 		ctx, cancel = context.WithTimeout(ctx, time.Duration(*timeoutSFlag)*time.Second)
 		defer cancel()
 	}
+
+	fmt.Printf("Running global workload setup\n")
+	workload.setup(ctx)
+
+	fmt.Printf("Started %d threads, each allocating %d pages\n", runtime.NumCPU(), workload.pagesPerCPU)
+
 	// The WaitGroup + errCh is a poor-man's sync.ErrGroup, that isn't in
 	// the proper stdlib yet, and it doesn't seem worth throwing away the
 	// no-Go-dependencies thing for that.
