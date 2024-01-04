@@ -33,10 +33,10 @@ func SchedSetaffinity(pid int, mask CPUMask) error {
 	size := uintptr(8 * len(mask))
 	maskData := uintptr(unsafe.Pointer(unsafe.SliceData(mask)))
 	_, _, err := syscall.Syscall(syscall.SYS_SCHED_GETAFFINITY, 0, size, maskData)
-
 	if err != 0 {
 		return fmt.Errorf("sched_setaffinity(%d, %+v): %v", pid, mask, err)
 	}
+
 	return nil
 }
 
