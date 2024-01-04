@@ -23,9 +23,10 @@
 
 #define NAME "page_alloc_bench"
 
+#define PAB_IOCTL_BASE			0x12
 /* IDs need to be manually synced with the Go file */
-#define PAB_IOCTL_ALLOC_PAGE	0x12340001
-#define PAB_IOCTL_FREE_PAGE 	0x12340002
+#define PAB_IOCTL_ALLOC_PAGE	_IOW(PAB_IOCTL_BASE, 1, struct page *)
+#define PAB_IOCTL_FREE_PAGE 	_IOR(PAB_IOCTL_BASE, 2, struct page *)
 
 /*
  * So we don't leak pages if userspace crashes, store them on a list. They're
@@ -102,7 +103,6 @@ static void alloced_pages_free_all(void)
 
 static long pab_ioctl(struct file *file, unsigned int cmd, unsigned long arg) {
 	switch (cmd) {
-
 		case PAB_IOCTL_ALLOC_PAGE: {
 			struct page *page;
 
@@ -123,7 +123,8 @@ static long pab_ioctl(struct file *file, unsigned int cmd, unsigned long arg) {
 			return 0;
 		}
 		default:
-			pr_err("Invalid page_alloc_bench ioctl 0x%x\n", cmd);
+			pr_err("Invalid page_alloc_bench ioctl 0x%x (valid example cmds: 0x%lx, 0x%lx)\n",
+				cmd, PAB_IOCTL_ALLOC_PAGE, PAB_IOCTL_FREE_PAGE);
 			return -EINVAL;
 	}
 }

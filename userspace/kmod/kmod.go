@@ -10,8 +10,9 @@ import (
 
 const (
 	// Needs to be manually synced with the C file
-	PAB_IOCTL_ALLOC_PAGE = 0x12340001
-	PAB_IOCTL_FREE_PAGE  = 0x12340002
+	// TODO: Need to use cgo, this hard-codes pointer size as 8.
+	PAB_IOCTL_ALLOC_PAGE = 0x40081201
+	PAB_IOCTL_FREE_PAGE  = 0x80081202
 )
 
 // Connection is a connection to a loaded kernel module.
