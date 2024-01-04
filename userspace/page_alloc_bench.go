@@ -189,7 +189,7 @@ func doMain() error {
 			cpuMask := linux.NewCPUMask(cpu)
 			err := linux.SchedSetaffinity(linux.PIDCallingThread, cpuMask)
 			if err != nil {
-				errCh <- fmt.Errorf("schedSetaffinity(%+v): %c", cpuMask, err)
+				errCh <- fmt.Errorf("SchedSetaffinity(%+v): %c", cpuMask, err)
 			}
 
 			err = workload.runCPU(ctx)
