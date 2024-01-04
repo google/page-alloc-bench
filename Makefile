@@ -19,7 +19,7 @@ kmod/page_alloc_bench.ko: $(addprefix kmod/, page_alloc_bench.c Kbuild)
 # Separate optional target since it will to build unless KDIR has been set to a
 # full kernel tree.
 kmod/compile_commands.json: kmod/page_alloc_bench.ko
-	$(MAKE) -C $(KDIR) M=$$PWD/kmod
+	$(MAKE) -C $(KDIR) M=$$PWD/kmod compile_commands.json
 
 .PHONY: userspace/page_alloc_bench
 userspace/page_alloc_bench:

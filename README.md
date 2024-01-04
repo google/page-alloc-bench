@@ -25,7 +25,7 @@ sometimes have to completely build the kernel for this to work (this issue might
 be unique to Google's kernel fork though).
 
 When you're using a full kernel tree via `KDIR` you can also build the
-`compile_commands.json` target to make clangd work on the kmod code.
+`kmod/compile_commands.json` target to make clangd work on the kmod code.
 
 You can build the `page_alloc_bench.run` target to build a self-extracting
 binary with `makeself`. This isn't in the default target, you need to explicitly
