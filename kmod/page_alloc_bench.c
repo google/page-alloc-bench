@@ -40,6 +40,7 @@ static DEFINE_PER_CPU(struct alloced_pages, alloced_pages);
 struct alloced_page {
 	struct list_head node;
 	struct alloced_pages *aps;
+	int order;
 };
 
 static void alloced_pages_init(void)
@@ -54,10 +55,18 @@ static void alloced_pages_init(void)
 	}
 }
 
-static void alloced_pages_store(struct page *page)
+static struct alloced_page *alloced_page_get(struct page *page)
+{
+	return (struct alloced_page *)page_to_virt(page);
+}
+
+
+static void alloced_pages_store(struct page *page, int order)
 {
 	struct alloced_pages *aps;
 	struct alloced_page *ap = (struct alloced_page *)page_to_virt(page);
+
+	ap->order = order;
 
 	get_cpu();
 
@@ -70,10 +79,8 @@ static void alloced_pages_store(struct page *page)
 	put_cpu();
 }
 
-static void alloced_pages_forget(struct page *page)
+static void alloced_page_forget(struct alloced_page *ap)
 {
-	struct alloced_page *ap = (struct alloced_page *)page_to_virt(page);
-
 	spin_lock(&ap->aps->lock);
 	list_del(&ap->node);
 	spin_unlock(&ap->aps->lock);
@@ -101,22 +108,29 @@ static void alloced_pages_free_all(void)
 static long pab_ioctl(struct file *file, unsigned int cmd, unsigned long arg) {
 	switch (cmd) {
 		case PAB_IOCTL_ALLOC_PAGE: {
+			struct pab_ioctl_alloc_page ioctl;
 			struct page *page;
+			int err;
 
-			page = alloc_page(GFP_KERNEL);
+			err = copy_from_user(&ioctl, (void *)arg, sizeof(struct pab_ioctl_alloc_page));
+			if (err)
+				return err;
+
+			page = alloc_pages(GFP_KERNEL, ioctl.args.order);
 			if (!page)
 				return -ENOMEM;
 
-			alloced_pages_store(page);
+			alloced_pages_store(page, ioctl.args.order);
 
-			return put_user(page, (struct page **)arg);
+			return put_user((unsigned long)page, &((struct pab_ioctl_alloc_page *)arg)->result);
 		}
 		case PAB_IOCTL_FREE_PAGE: {
 			struct page *page = (struct page *)arg;
+			struct alloced_page *ap = alloced_page_get(page);
 
-			alloced_pages_forget(page);
+			alloced_page_forget(ap);
 
-			__free_page(page);
+			__free_pages(page, ap->order);
 			return 0;
 		}
 		default:

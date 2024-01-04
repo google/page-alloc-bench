@@ -132,7 +132,7 @@ func (w *workload) runCPU(ctx context.Context) error {
 			return err
 		}
 
-		page, err := w.kmod.AllocPage()
+		page, err := w.kmod.AllocPage(0)
 		if err != nil {
 			return fmt.Errorf("allocating page %d: %v", i, err)
 		}

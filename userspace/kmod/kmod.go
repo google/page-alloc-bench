@@ -24,13 +24,14 @@ type Connection struct {
 }
 
 // Page is an opaque ID for a page.
-type Page uintptr
+type Page C.ulong
 
 // AllocPage allocates a page.
-func (k *Connection) AllocPage() (Page, error) {
-	var page Page
-	err := linux.Ioctl(k.File, C.pab_ioctl_alloc_page, uintptr(unsafe.Pointer(&page)))
-	return page, err
+func (k *Connection) AllocPage(order int) (Page, error) {
+	var ioctl C.struct_pab_ioctl_alloc_page
+	ioctl.args.order = C.int(order)
+	err := linux.Ioctl(k.File, C.pab_ioctl_alloc_page, uintptr(unsafe.Pointer(&ioctl)))
+	return Page(ioctl.result), err
 }
 
 // FreePage frees a page.
