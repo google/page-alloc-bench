@@ -8,12 +8,15 @@ import (
 	"github.com/google/page_alloc_bench/linux"
 )
 
-const (
-	// Needs to be manually synced with the C file
-	// TODO: Need to use cgo, this hard-codes pointer size as 8.
-	PAB_IOCTL_ALLOC_PAGE = 0x40081201
-	PAB_IOCTL_FREE_PAGE  = 0x80081202
-)
+/*
+#include <stdint.h>
+
+#include "page_alloc_bench.h"
+
+const uintptr_t pab_ioctl_alloc_page = PAB_IOCTL_ALLOC_PAGE;
+const uintptr_t pab_ioctl_free_page = PAB_IOCTL_FREE_PAGE;
+*/
+import "C"
 
 // Connection is a connection to a loaded kernel module.
 type Connection struct {
@@ -26,11 +29,11 @@ type Page uintptr
 // AllocPage allocates a page.
 func (k *Connection) AllocPage() (Page, error) {
 	var page Page
-	err := linux.Ioctl(k.File, PAB_IOCTL_ALLOC_PAGE, uintptr(unsafe.Pointer(&page)))
+	err := linux.Ioctl(k.File, C.pab_ioctl_alloc_page, uintptr(unsafe.Pointer(&page)))
 	return page, err
 }
 
 // FreePage frees a page.
 func (k *Connection) FreePage(page Page) error {
-	return linux.Ioctl(k.File, PAB_IOCTL_FREE_PAGE, uintptr(page))
+	return linux.Ioctl(k.File, C.pab_ioctl_free_page, uintptr(page))
 }

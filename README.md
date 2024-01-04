@@ -22,7 +22,8 @@ To run on another system, use `make KDIR=$KERNEL_TREE`. If that kernel was built
 with clang add `LLVM=1`. In theory I think you should only have to have done
 `make modules prepare` in your kernel tree but in practice I've found you
 sometimes have to completely build the kernel for this to work (this issue might
-be unique to Google's kernel fork though).
+be unique to Google's kernel fork though). Cross-compilation for other arches
+isn't supported (I probably shouldn't have used Go...).
 
 When you're using a full kernel tree via `KDIR` you can also build the
 `kmod/compile_commands.json` target to make clangd work on the kmod code.
