@@ -13,7 +13,8 @@ all: userspace/page_alloc_bench kmod/page_alloc_bench.ko
 page_alloc_bench.run: $(addprefix .makeself-build/, run.sh userspace/page_alloc_bench kmod/page_alloc_bench.ko)
 	makeself .makeself-build page_alloc_bench.run "page_alloc_bench" ./run.sh
 
-kmod/page_alloc_bench.ko: $(addprefix kmod/, page_alloc_bench.c Kbuild)
+.PHONY: kmod/page_alloc_bench.ko
+kmod/page_alloc_bench.ko:
 	$(MAKE) -C $(KDIR) M=$$PWD/kmod modules
 
 # Separate optional target since it will to build unless KDIR has been set to a
