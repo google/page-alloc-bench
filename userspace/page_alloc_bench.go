@@ -21,6 +21,7 @@ import (
 	"io"
 	"os"
 	"runtime"
+	"slices"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -46,9 +47,29 @@ func (s *stats) String() string {
 }
 
 var (
-	totalMemoryFlag = flag.Uint64("total-memory", 256*megabyte, "Total memory to allocate in bytes")
-	timeoutSFlag    = flag.Int("timeout-s", 10, "Timeout in seconds. Set 0 for no timeout")
+	totalMemoryFlag  = flag.Uint64("total-memory", 256*megabyte, "Total memory to allocate in bytes")
+	timeoutSFlag     = flag.Int("timeout-s", 10, "Timeout in seconds. Set 0 for no timeout")
+	testDataPathFlag = flag.String("test-data-path", "", "For dev, path to reuse for test data")
 )
+
+// cleanups provides functionality like testing.T.Cleanup.
+type cleanups struct {
+	funcs []func()
+}
+
+// cleanup adds a cleanup.
+func (c *cleanups) cleanup(f func()) {
+	c.funcs = append(c.funcs, f)
+}
+
+// run runs the cleanups in the reverse order of the cleanup() calls.
+func (c *cleanups) run() {
+	slices.Reverse(c.funcs)
+	for _, f := range c.funcs {
+		f()
+	}
+	c.funcs = nil
+}
 
 // A workload that allocates and the frees a bunch of pages on every CPU.
 type workload struct {
@@ -56,18 +77,7 @@ type workload struct {
 	stats          *stats
 	variedDataPath string // Path to a file with some data in it.
 	pagesPerCPU    uint64
-	cleanups       []func()
-}
-
-// cleanup is like testing.T.Cleanup.
-func (w *workload) cleanup(f func()) {
-	w.cleanups = append(w.cleanups, f)
-}
-
-func (w *workload) runCleanups() {
-	for _, f := range w.cleanups {
-		f()
-	}
+	cleanups
 }
 
 // io.Reader that produces some sort of bytes that aren't all the same value.
@@ -90,10 +100,27 @@ func (r *variedReader) Read(p []byte) (n int, err error) {
 
 // Create a bunch of data we can later use to fill up the page cache.
 // Returns file path.
-func setupVariedData(ctx context.Context) (string, error) {
-	f, err := os.CreateTemp("", "")
-	if err != nil {
-		return "", fmt.Errorf("making tempfile: %v", err)
+func setupVariedData(ctx context.Context, path string, c *cleanups) (string, error) {
+	// Hacks for fast development.
+	var f *os.File
+	if path != "" {
+		_, err := os.Stat(path)
+		if err == nil { // Already exists?
+			fmt.Printf("Reusing data file %v\n", path)
+			return path, nil
+		}
+		fmt.Printf("Creating reusable data file (stat returned: %v) %v\n", err, path)
+		f, err = os.Create(path)
+		if err != nil {
+			return "", fmt.Errorf("making source data file: %v", err)
+		}
+	} else {
+		var err error
+		f, err = os.CreateTemp("", "")
+		if err != nil {
+			return "", fmt.Errorf("making source data file: %v", err)
+		}
+		c.cleanup(func() { os.Remove(f.Name()) })
 	}
 
 	// Close the file when the context is canceled, to abort the io.Copy. This
@@ -108,7 +135,7 @@ func setupVariedData(ctx context.Context) (string, error) {
 	}()
 
 	// Write a bunch of bytes that aren't just all zero or whatever.
-	_, err = io.Copy(f, &io.LimitedReader{&variedReader{}, 1 * gigabyte})
+	_, err := io.Copy(f, &io.LimitedReader{&variedReader{}, 1 * gigabyte})
 	if err != nil {
 		return "", fmt.Errorf("writing data to populate page cache: %v", err)
 	}
@@ -176,11 +203,12 @@ func doMain() error {
 		defer cancel()
 	}
 
-	variedDataPath, err := setupVariedData(ctx)
+	var cleanups cleanups
+	defer cleanups.run()
+	variedDataPath, err := setupVariedData(ctx, *testDataPathFlag, &cleanups)
 	if err != nil {
 		return err
 	}
-	defer os.Remove(variedDataPath)
 
 	var stats stats
 
@@ -189,8 +217,8 @@ func doMain() error {
 		stats:          &stats,
 		variedDataPath: variedDataPath,
 		pagesPerCPU:    (*totalMemoryFlag / uint64(os.Getpagesize())) / (2 * uint64(runtime.NumCPU())),
+		cleanups:       cleanups,
 	}
-	defer workload.runCleanups()
 
 	fmt.Printf("Running global workload setup\n")
 	workload.setup(ctx)
