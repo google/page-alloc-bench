@@ -38,40 +38,47 @@ struct alloced_pages {
 };
 static DEFINE_PER_CPU(struct alloced_pages, alloced_pages);
 
+/* Info about a page we allocated, stored at the beginning of that page*/
+struct alloced_page {
+	struct list_head node;
+	struct alloced_pages *aps;
+};
+
 static void alloced_pages_init(void)
 {
 	int cpu;
 
 	for_each_possible_cpu(cpu) {
-		struct alloced_pages *ap = per_cpu_ptr(&alloced_pages, cpu);
+		struct alloced_pages *aps = per_cpu_ptr(&alloced_pages, cpu);
 
-		spin_lock_init(&ap->lock);
-		INIT_LIST_HEAD(&ap->pages);
+		spin_lock_init(&aps->lock);
+		INIT_LIST_HEAD(&aps->pages);
 	}
 }
 
 static void alloced_pages_store(struct page *page)
 {
-	struct alloced_pages *ap;
+	struct alloced_pages *aps;
+	struct alloced_page *ap = (struct alloced_page *)page_to_virt(page);
 
 	get_cpu();
 
-	ap = this_cpu_ptr(&alloced_pages);
-	page->private = (unsigned long)ap;
-	spin_lock(&ap->lock);
-	list_add(&page->lru, &ap->pages);
-	spin_unlock(&ap->lock);
+	aps = this_cpu_ptr(&alloced_pages);
+	spin_lock(&aps->lock);
+	list_add(&ap->node, &aps->pages);
+	ap->aps = aps;
+	spin_unlock(&aps->lock);
 
 	put_cpu();
 }
 
 static void alloced_pages_forget(struct page *page)
 {
-	struct alloced_pages *ap = (struct alloced_pages *)page->private;
+	struct alloced_page *ap = (struct alloced_page *)page_to_virt(page);
 
-	spin_lock(&ap->lock);
-	list_del(&page->lru);
-	spin_unlock(&ap->lock);
+	spin_lock(&ap->aps->lock);
+	list_del(&ap->node);
+	spin_unlock(&ap->aps->lock);
 }
 
 static void alloced_pages_free_all(void)
@@ -79,16 +86,16 @@ static void alloced_pages_free_all(void)
 	int cpu;
 
 	for_each_possible_cpu(cpu) {
-		struct alloced_pages *ap = per_cpu_ptr(&alloced_pages, cpu);
-		struct page *page, *tmp;
+		struct alloced_pages *aps = per_cpu_ptr(&alloced_pages, cpu);
+		struct alloced_page *ap, *tmp;
 
 		/* Contention should be impossible at this point, and isn't handled. */
-		WARN_ON(spin_is_locked(&ap->lock));
+		WARN_ON(spin_is_locked(&aps->lock));
 
-		list_for_each_entry_safe(page, tmp, &ap->pages, lru) {
-			WARN_ON(page->private != (unsigned long)ap);
-			list_del(&page->lru);
-			__free_page(page);
+		list_for_each_entry_safe(ap, tmp, &aps->pages, node) {
+			WARN_ON(ap->aps != aps);
+			list_del(&ap->node);
+			__free_page(virt_to_page(ap));
 		}
 	}
 }
