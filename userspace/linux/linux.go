@@ -48,3 +48,13 @@ func Ioctl(file *os.File, cmd, arg uintptr) error {
 	}
 	return nil
 }
+
+// For debugging. SYS_GETCPU not in the syscall package. So this only workds on amd64.
+func getcpu() (int, error) {
+	var cpu int
+	_, _, err := syscall.Syscall(309, uintptr(unsafe.Pointer(&cpu)), 0, 0)
+	if err != 0 {
+		return -1, fmt.Errorf("getcpu: %v", err)
+	}
+	return cpu, nil
+}
