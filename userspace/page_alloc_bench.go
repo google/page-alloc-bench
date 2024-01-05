@@ -126,7 +126,9 @@ func (w *workload) setup(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("opening data to fill page cache: %v")
 	}
-	_, err = io.ReadAll(f)
+	fmt.Printf("Reading %v\n", w.variedDataPath)
+	_, err = io.Copy(io.Discard, f)
+	fmt.Printf("Done reading %v\n", w.variedDataPath)
 	return err
 }
 
