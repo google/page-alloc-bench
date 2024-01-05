@@ -222,7 +222,7 @@ func doMain() error {
 
 	err = eg.Wait()
 
-	fmt.Printf("stats: %s", workload.stats.String())
+	fmt.Printf("stats: %s\n", workload.stats.String())
 
 	return err
 }
