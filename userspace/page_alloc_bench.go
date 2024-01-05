@@ -21,12 +21,12 @@ import (
 	"io"
 	"os"
 	"runtime"
-	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/google/page_alloc_bench/kmod"
 	"github.com/google/page_alloc_bench/linux"
+	"golang.org/x/sync/errgroup"
 )
 
 const (
@@ -176,11 +176,9 @@ func doMain() error {
 	// The WaitGroup + errCh is a poor-man's sync.ErrGroup, that isn't in
 	// the proper stdlib yet, and it doesn't seem worth throwing away the
 	// no-Go-dependencies thing for that.
-	var wg sync.WaitGroup
-	errCh := make(chan error)
+	eg, ctx := errgroup.WithContext(ctx)
 	for cpu := 0; cpu < runtime.NumCPU(); cpu++ {
-		wg.Add(1)
-		go func() {
+		eg.Go(func() error {
 			// This means that the goroutine gets the thread to
 			// itself and the thread never gets migrated between
 			// goroutines. IOW the goroutine "is a thread".
@@ -189,34 +187,22 @@ func doMain() error {
 			cpuMask := linux.NewCPUMask(cpu)
 			err := linux.SchedSetaffinity(linux.PIDCallingThread, cpuMask)
 			if err != nil {
-				errCh <- fmt.Errorf("SchedSetaffinity(%+v): %c", cpuMask, err)
-				return
+				return fmt.Errorf("SchedSetaffinity(%+v): %c", cpuMask, err)
 			}
 
 			err = workload.runCPU(ctx)
 			if err != nil {
-				errCh <- fmt.Errorf("workload failed on CPU %d: %v", cpu, err)
+				return fmt.Errorf("workload failed on CPU %d: %v", cpu, err)
 			}
-			wg.Done()
-		}()
+			return nil
+		})
 	}
 
-	// Poor-man's sync.ErrGroup.Wait()
-	done := make(chan any)
-	go func() {
-		wg.Wait()
-		close(done)
-	}()
-	select {
-	case <-done:
-		break
-	case err := <-errCh:
-		return err
-	}
+	err = eg.Wait()
 
 	fmt.Printf("stats: %s", workload.stats.String())
 
-	return nil
+	return err
 }
 
 func main() {
