@@ -22,6 +22,7 @@ import (
 	"os"
 	"runtime"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	"github.com/google/page_alloc_bench/kmod"
@@ -51,10 +52,11 @@ var (
 
 // A workload that allocates and the frees a bunch of pages on every CPU.
 type workload struct {
-	kmod        *kmod.Connection
-	stats       *stats
-	pagesPerCPU uint64
-	cleanups    []func()
+	kmod           *kmod.Connection
+	stats          *stats
+	variedDataPath string // Path to a file with some data in it.
+	pagesPerCPU    uint64
+	cleanups       []func()
 }
 
 // cleanup is like testing.T.Cleanup.
@@ -86,15 +88,13 @@ func (r *variedReader) Read(p []byte) (n int, err error) {
 	return len(p), nil
 }
 
-// Initial setup part of a workload - run only once on the system.
-func (w *workload) setup(ctx context.Context) error {
-	// Create a bunch of page cache data.
-
+// Create a bunch of data we can later use to fill up the page cache.
+// Returns file path.
+func setupVariedData(ctx context.Context) (string, error) {
 	f, err := os.CreateTemp("", "")
 	if err != nil {
-		return fmt.Errorf("making tempfile: %v", err)
+		return "", fmt.Errorf("making tempfile: %v", err)
 	}
-	w.cleanup(func() { os.Remove(f.Name()) })
 
 	// Close the file when the context is canceled, to abort the io.Copy. This
 	// probably won't shut down cleanly, although this logic could be extended
@@ -110,9 +110,24 @@ func (w *workload) setup(ctx context.Context) error {
 	// Write a bunch of bytes that aren't just all zero or whatever.
 	_, err = io.Copy(f, &io.LimitedReader{&variedReader{}, 1 * gigabyte})
 	if err != nil {
-		return fmt.Errorf("writing data to populate page cache: %v", err)
+		return "", fmt.Errorf("writing data to populate page cache: %v", err)
 	}
-	return nil
+
+	// Sync so the pages aren't dirty.
+	syscall.Sync()
+
+	return f.Name(), nil
+}
+
+// Run once on the system before each iteration of the workload.
+func (w *workload) setup(ctx context.Context) error {
+	// Read some data to populate the page cache a bit.
+	f, err := os.Open(w.variedDataPath)
+	if err != nil {
+		return fmt.Errorf("opening data to fill page cache: %v")
+	}
+	_, err = io.ReadAll(f)
+	return err
 }
 
 // per-CPU element of a workload. Assumes that the calling goroutine is already
@@ -152,21 +167,28 @@ func doMain() error {
 	kmod := kmod.Connection{file}
 	defer kmod.Close()
 
-	var stats stats
-
-	workload := workload{
-		kmod:        &kmod,
-		stats:       &stats,
-		pagesPerCPU: (*totalMemoryFlag / uint64(os.Getpagesize())) / uint64(runtime.NumCPU()),
-	}
-	defer workload.runCleanups()
-
 	ctx := context.Background()
 	if *timeoutSFlag != 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, time.Duration(*timeoutSFlag)*time.Second)
 		defer cancel()
 	}
+
+	variedDataPath, err := setupVariedData(ctx)
+	if err != nil {
+		return err
+	}
+	defer os.Remove(variedDataPath)
+
+	var stats stats
+
+	workload := workload{
+		kmod:           &kmod,
+		stats:          &stats,
+		variedDataPath: variedDataPath,
+		pagesPerCPU:    (*totalMemoryFlag / uint64(os.Getpagesize())) / (2 * uint64(runtime.NumCPU())),
+	}
+	defer workload.runCleanups()
 
 	fmt.Printf("Running global workload setup\n")
 	workload.setup(ctx)
