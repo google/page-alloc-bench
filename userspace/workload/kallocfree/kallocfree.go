@@ -19,6 +19,7 @@ package kallocfree
 
 import (
 	"context"
+	"crypto/rand"
 	"fmt"
 	"io"
 	"os"
@@ -48,34 +49,17 @@ func (s *stats) String() string {
 }
 
 type workload struct {
-	kmod           *kmod.Connection
-	stats          *stats
-	variedDataPath string // Path to a file with some data in it.
-	pagesPerCPU    int64
+	kmod         *kmod.Connection
+	stats        *stats
+	testDataPath string // Path to a file with some data in it.
+	pagesPerCPU  int64
 	*pab.Cleanups
 }
 
 // io.Reader that produces some sort of bytes that aren't all the same value.
-// Can't use rand due to https://github.com/golang/go/issues/64943
-type variedReader struct {
-	i byte
-}
-
-func (r *variedReader) Read(p []byte) (n int, err error) {
-	for o := 0; o < len(p); o++ {
-		p[o] = r.i
-		if r.i == 255 {
-			r.i = 0
-		} else {
-			r.i++
-		}
-	}
-	return len(p), nil
-}
-
 // Create a bunch of data we can later use to fill up the page cache.
 // Returns file path.
-func setupVariedData(ctx context.Context, path string, c *pab.Cleanups) (string, error) {
+func setupTestData(ctx context.Context, path string, c *pab.Cleanups) (string, error) {
 	// Hacks for fast development.
 	var f *os.File
 	if path != "" {
@@ -110,7 +94,7 @@ func setupVariedData(ctx context.Context, path string, c *pab.Cleanups) (string,
 	}()
 
 	// Write a bunch of bytes that aren't just all zero or whatever.
-	_, err := io.Copy(f, &io.LimitedReader{&variedReader{}, (1 * pab.Gigabyte).Bytes()})
+	_, err := io.Copy(f, &io.LimitedReader{rand.Reader, (1 * pab.Gigabyte).Bytes()})
 	if err != nil {
 		return "", fmt.Errorf("writing data to populate page cache: %v", err)
 	}
@@ -124,13 +108,13 @@ func setupVariedData(ctx context.Context, path string, c *pab.Cleanups) (string,
 // Run once on the system before each iteration of the workload.
 func (w *workload) setup(ctx context.Context) error {
 	// Read some data to populate the page cache a bit.
-	f, err := os.Open(w.variedDataPath)
+	f, err := os.Open(w.testDataPath)
 	if err != nil {
 		return fmt.Errorf("opening data to fill page cache: %v")
 	}
-	fmt.Printf("Reading %v\n", w.variedDataPath)
+	fmt.Printf("Reading %v\n", w.testDataPath)
 	_, err = io.Copy(io.Discard, f)
-	fmt.Printf("Done reading %v\n", w.variedDataPath)
+	fmt.Printf("Done reading %v\n", w.testDataPath)
 	return err
 }
 
@@ -209,7 +193,7 @@ func Run(ctx context.Context, opts *Options) error {
 
 	var c pab.Cleanups
 	defer c.Run()
-	variedDataPath, err := setupVariedData(ctx, opts.TestDataPath, &c)
+	testDataPath, err := setupTestData(ctx, opts.TestDataPath, &c)
 	if err != nil {
 		return err
 	}
@@ -217,11 +201,11 @@ func Run(ctx context.Context, opts *Options) error {
 	var stats stats
 
 	workload := workload{
-		kmod:           &kmod,
-		stats:          &stats,
-		variedDataPath: variedDataPath,
-		pagesPerCPU:    opts.TotalMemory.Pages() / int64(runtime.NumCPU()),
-		Cleanups:       &c,
+		kmod:         &kmod,
+		stats:        &stats,
+		testDataPath: testDataPath,
+		pagesPerCPU:  opts.TotalMemory.Pages() / int64(runtime.NumCPU()),
+		Cleanups:     &c,
 	}
 
 	err = workload.run(ctx)

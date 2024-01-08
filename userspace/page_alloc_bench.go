@@ -41,7 +41,7 @@ func doMain() error {
 		defer cancel()
 	}
 
-	allWorkloads := "kallocfree, findlimit"
+	allWorkloads := "kallocfree, findlimit, composite"
 	switch *workloadFlag {
 	case "kallocfree":
 		return kallocfree.Run(ctx, &kallocfree.Options{
