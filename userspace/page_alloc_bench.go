@@ -27,6 +27,7 @@ import (
 	"github.com/google/page_alloc_bench/pab"
 	"github.com/google/page_alloc_bench/workload/findlimit"
 	"github.com/google/page_alloc_bench/workload/kallocfree"
+	"golang.org/x/sync/errgroup"
 )
 
 var (
@@ -106,14 +107,45 @@ func doMain() error {
 			TotalMemory:  pab.ByteSize(*totalMemoryFlag),
 			TestDataPath: testDataPath,
 		})
+
 	case "findlimit":
-		result, err := findlimit.Run(ctx, &findlimit.Options{
-			AllocSize: 128 * pab.Megabyte,
-		})
+		result, err := findlimit.Run(ctx, &findlimit.Options{})
 		if err != nil {
 			return err
 		}
 		fmt.Printf("Allocated %s\n", result.Allocated)
+	case "composite":
+		// Figure out how much memory the system appears to have when idle.
+		findlimitResult, err := findlimit.Run(ctx, &findlimit.Options{})
+		if err != nil {
+			return err
+		}
+
+		// Make the system busy with lots of background kernel allocations and frees.
+		ctx, cancel := context.WithCancel(ctx)
+		defer cancel()
+		eg, ctx := errgroup.WithContext(ctx)
+		eg.Go(func() error {
+			for {
+				err := kallocfree.Run(ctx, &kallocfree.Options{
+					TotalMemory: findlimitResult.Allocated - 128*pab.Megabyte,
+				})
+				if ctx.Err() != nil {
+					return nil
+				}
+				if err != nil {
+					return err
+				}
+			}
+		})
+
+		// See how much memory seems to be in the system now.
+		result, err := findlimit.Run(ctx, &findlimit.Options{})
+		if err != nil {
+			return err
+		}
+		fmt.Printf("Result: %s (down from %s)\n", result.Allocated, findlimitResult.Allocated)
+
 	default:
 		return fmt.Errorf("Invalid value for --workload - %q. Available: %s\n", *workloadFlag, allWorkloads)
 	case "?":

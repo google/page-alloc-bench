@@ -32,7 +32,7 @@ import (
 )
 
 type Options struct {
-	AllocSize pab.ByteSize
+	AllocSize pab.ByteSize // Optional.
 }
 
 type Result struct {
@@ -57,7 +57,11 @@ func Run(ctx context.Context, opts *Options) (*Result, error) {
 		return nil, fmt.Errorf("getting executable path: %v\n", err)
 	}
 	path := filepath.Join(filepath.Dir(myPath), "workload", "findlimit", "child", "child")
-	cmd := exec.CommandContext(ctx, path, fmt.Sprintf("--alloc-size=%d", opts.AllocSize.Bytes()))
+	size := opts.AllocSize
+	if size == pab.ByteSize(0) {
+		size = 128 * pab.Megabyte
+	}
+	cmd := exec.CommandContext(ctx, path, fmt.Sprintf("--alloc-size=%d", size.Bytes()))
 	cmd.Stderr = os.Stderr
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
