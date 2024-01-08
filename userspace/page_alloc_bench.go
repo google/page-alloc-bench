@@ -16,9 +16,12 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
 	"flag"
 	"fmt"
+	"io"
 	"os"
+	"syscall"
 	"time"
 
 	"github.com/google/page_alloc_bench/pab"
@@ -33,6 +36,54 @@ var (
 	testDataPathFlag = flag.String("test-data-path", "", "For dev, path to reuse for test data")
 )
 
+// Create a bunch of data we can later use to fill up the page cache.
+// Returns file path.
+func setupTestData(ctx context.Context, path string, c *pab.Cleanups) (string, error) {
+	// Hacks for fast development.
+	var f *os.File
+	if path != "" {
+		_, err := os.Stat(path)
+		if err == nil { // Already exists?
+			fmt.Printf("Reusing data file %v\n", path)
+			return path, nil
+		}
+		fmt.Printf("Creating reusable data file (stat returned: %v) %v\n", err, path)
+		f, err = os.Create(path)
+		if err != nil {
+			return "", fmt.Errorf("making source data file: %v", err)
+		}
+	} else {
+		var err error
+		f, err = os.CreateTemp("", "")
+		if err != nil {
+			return "", fmt.Errorf("making source data file: %v", err)
+		}
+		c.Cleanup(func() { os.Remove(f.Name()) })
+	}
+
+	// Close the file when the context is canceled, to abort the io.Copy. This
+	// probably won't shut down cleanly, although this logic could be extended
+	// to do so if necessary. Note also the f.Close races with the os.Remove,
+	// this is harmless.
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	go func() {
+		<-ctx.Done()
+		f.Close()
+	}()
+
+	// Write a bunch of bytes that aren't just all zero or whatever.
+	_, err := io.Copy(f, &io.LimitedReader{rand.Reader, (1 * pab.Gigabyte).Bytes()})
+	if err != nil {
+		return "", fmt.Errorf("writing data to populate page cache: %v", err)
+	}
+
+	// Sync so the pages aren't dirty.
+	syscall.Sync()
+
+	return f.Name(), nil
+}
+
 func doMain() error {
 	ctx := context.Background()
 	if *timeoutSFlag != 0 {
@@ -41,12 +92,19 @@ func doMain() error {
 		defer cancel()
 	}
 
+	var c pab.Cleanups
+	defer c.Run()
 	allWorkloads := "kallocfree, findlimit, composite"
 	switch *workloadFlag {
 	case "kallocfree":
+		testDataPath, err := setupTestData(ctx, *testDataPathFlag, &c)
+		if err != nil {
+			return err
+		}
+
 		return kallocfree.Run(ctx, &kallocfree.Options{
 			TotalMemory:  pab.ByteSize(*totalMemoryFlag),
-			TestDataPath: *testDataPathFlag,
+			TestDataPath: testDataPath,
 		})
 	case "findlimit":
 		return findlimit.Run(ctx, &findlimit.Options{

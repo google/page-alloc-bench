@@ -19,13 +19,11 @@ package kallocfree
 
 import (
 	"context"
-	"crypto/rand"
 	"fmt"
 	"io"
 	"os"
 	"runtime"
 	"sync/atomic"
-	"syscall"
 
 	"github.com/google/page_alloc_bench/kmod"
 	"github.com/google/page_alloc_bench/linux"
@@ -51,62 +49,16 @@ func (s *stats) String() string {
 type workload struct {
 	kmod         *kmod.Connection
 	stats        *stats
-	testDataPath string // Path to a file with some data in it.
+	testDataPath string // Path to a file with some data in it. Optional.
 	pagesPerCPU  int64
 	*pab.Cleanups
 }
 
-// io.Reader that produces some sort of bytes that aren't all the same value.
-// Create a bunch of data we can later use to fill up the page cache.
-// Returns file path.
-func setupTestData(ctx context.Context, path string, c *pab.Cleanups) (string, error) {
-	// Hacks for fast development.
-	var f *os.File
-	if path != "" {
-		_, err := os.Stat(path)
-		if err == nil { // Already exists?
-			fmt.Printf("Reusing data file %v\n", path)
-			return path, nil
-		}
-		fmt.Printf("Creating reusable data file (stat returned: %v) %v\n", err, path)
-		f, err = os.Create(path)
-		if err != nil {
-			return "", fmt.Errorf("making source data file: %v", err)
-		}
-	} else {
-		var err error
-		f, err = os.CreateTemp("", "")
-		if err != nil {
-			return "", fmt.Errorf("making source data file: %v", err)
-		}
-		c.Cleanup(func() { os.Remove(f.Name()) })
-	}
-
-	// Close the file when the context is canceled, to abort the io.Copy. This
-	// probably won't shut down cleanly, although this logic could be extended
-	// to do so if necessary. Note also the f.Close races with the os.Remove,
-	// this is harmless.
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
-	go func() {
-		<-ctx.Done()
-		f.Close()
-	}()
-
-	// Write a bunch of bytes that aren't just all zero or whatever.
-	_, err := io.Copy(f, &io.LimitedReader{rand.Reader, (1 * pab.Gigabyte).Bytes()})
-	if err != nil {
-		return "", fmt.Errorf("writing data to populate page cache: %v", err)
-	}
-
-	// Sync so the pages aren't dirty.
-	syscall.Sync()
-
-	return f.Name(), nil
-}
-
 // Run once on the system before each iteration of the workload.
 func (w *workload) setup(ctx context.Context) error {
+	if w.testDataPath == "" {
+		return nil
+	}
 	// Read some data to populate the page cache a bit.
 	f, err := os.Open(w.testDataPath)
 	if err != nil {
@@ -191,21 +143,13 @@ func Run(ctx context.Context, opts *Options) error {
 	kmod := kmod.Connection{file}
 	defer kmod.Close()
 
-	var c pab.Cleanups
-	defer c.Run()
-	testDataPath, err := setupTestData(ctx, opts.TestDataPath, &c)
-	if err != nil {
-		return err
-	}
-
 	var stats stats
 
 	workload := workload{
 		kmod:         &kmod,
 		stats:        &stats,
-		testDataPath: testDataPath,
 		pagesPerCPU:  opts.TotalMemory.Pages() / int64(runtime.NumCPU()),
-		Cleanups:     &c,
+		testDataPath: opts.TestDataPath,
 	}
 
 	err = workload.run(ctx)
