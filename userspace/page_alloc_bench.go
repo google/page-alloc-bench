@@ -22,10 +22,12 @@ import (
 	"time"
 
 	"github.com/google/page_alloc_bench/pab"
+	"github.com/google/page_alloc_bench/workload/findlimit"
 	"github.com/google/page_alloc_bench/workload/kallocfree"
 )
 
 var (
+	workloadFlag     = flag.String("workload", "", "Worklad to run. Required. Pass ? to see available workloads")
 	totalMemoryFlag  = flag.Int64("total-memory", (256 * pab.Megabyte).Bytes(), "Total memory to allocate in bytes")
 	timeoutSFlag     = flag.Int("timeout-s", 10, "Timeout in seconds. Set 0 for no timeout")
 	testDataPathFlag = flag.String("test-data-path", "", "For dev, path to reuse for test data")
@@ -39,10 +41,23 @@ func doMain() error {
 		defer cancel()
 	}
 
-	return kallocfree.Run(ctx, &kallocfree.Options{
-		TotalMemory:  pab.ByteSize(*totalMemoryFlag),
-		TestDataPath: *testDataPathFlag,
-	})
+	allWorkloads := "kallocfree, findlimit"
+	switch *workloadFlag {
+	case "kallocfree":
+		return kallocfree.Run(ctx, &kallocfree.Options{
+			TotalMemory:  pab.ByteSize(*totalMemoryFlag),
+			TestDataPath: *testDataPathFlag,
+		})
+	case "findlimit":
+		return findlimit.Run(ctx, &findlimit.Options{
+			AllocSize: 128 * pab.Megabyte,
+		})
+	default:
+		return fmt.Errorf("Invalid value for --workload - %q. Available: %s\n", *workloadFlag, allWorkloads)
+	case "?":
+		fmt.Fprintf(os.Stdout, "Available workloads: %s\n", allWorkloads)
+		return nil
+	}
 }
 
 func main() {

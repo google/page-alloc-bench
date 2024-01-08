@@ -2,6 +2,7 @@
 package pab
 
 import (
+	"fmt"
 	"os"
 	"slices"
 )
@@ -20,6 +21,17 @@ func (s ByteSize) Bytes() int64 {
 
 func (s ByteSize) Pages() int64 {
 	return s.Bytes() / int64(os.Getpagesize())
+}
+
+func (s ByteSize) String() string {
+	switch {
+	case s < Megabyte:
+		return fmt.Sprintf("%dB")
+	case s < Gigabyte:
+		return fmt.Sprintf("%.2fMiB", float64(s)/float64(Megabyte))
+	default:
+		return fmt.Sprintf("%.2fGiB", float64(s)/float64(Gigabyte))
+	}
 }
 
 // Cleanups provides functionality like testing.T.Cleanup.
