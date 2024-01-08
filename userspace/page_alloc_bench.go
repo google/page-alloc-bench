@@ -107,15 +107,19 @@ func doMain() error {
 			TestDataPath: testDataPath,
 		})
 	case "findlimit":
-		return findlimit.Run(ctx, &findlimit.Options{
+		result, err := findlimit.Run(ctx, &findlimit.Options{
 			AllocSize: 128 * pab.Megabyte,
 		})
+		if err != nil {
+			return err
+		}
+		fmt.Printf("Allocated %s\n", result.Allocated)
 	default:
 		return fmt.Errorf("Invalid value for --workload - %q. Available: %s\n", *workloadFlag, allWorkloads)
 	case "?":
 		fmt.Fprintf(os.Stdout, "Available workloads: %s\n", allWorkloads)
-		return nil
 	}
+	return nil
 }
 
 func main() {
