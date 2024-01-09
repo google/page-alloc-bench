@@ -116,10 +116,12 @@ func doMain() error {
 		fmt.Printf("Allocated %s\n", result.Allocated)
 	case "composite":
 		// Figure out how much memory the system appears to have when idle.
+		fmt.Printf("Assessing system memory availability...\n")
 		findlimitResult, err := findlimit.Run(ctx, &findlimit.Options{})
 		if err != nil {
 			return err
 		}
+		fmt.Printf("...Found %s available to userspace\n", findlimitResult.Allocated)
 
 		// Make the system busy with lots of background kernel allocations and frees.
 		ctx, cancel := context.WithCancel(ctx)
