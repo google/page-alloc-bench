@@ -14,16 +14,16 @@ all: $(go_binaries) kmod/page_alloc_bench.ko
 page_alloc_bench.run: $(addprefix .makeself-build/, run.sh kmod/page_alloc_bench.ko $(go_binaries))
 	makeself .makeself-build page_alloc_bench.run "page_alloc_bench" ./run.sh
 
-.PHONY: kmod/page_alloc_bench.ko
+.PHONY: kmod/page_alloc_bench.ko # Let kbuild decide the dependencies.
 kmod/page_alloc_bench.ko:
 	$(MAKE) -C $(KDIR) M=$$PWD/kmod modules
 
-# Separate optional target since it will to build unless KDIR has been set to a
+# Separate optional target since it will not build unless KDIR has been set to a
 # full kernel tree.
 kmod/compile_commands.json: kmod/page_alloc_bench.ko
 	$(MAKE) -C $(KDIR) M=$$PWD/kmod compile_commands.json
 
-.PHONY: $(go_binaries)
+.PHONY: $(go_binaries) # Let Go decide the dependencies.
 $(go_binaries):
 	cd $$(dirname $@); go build .
 
