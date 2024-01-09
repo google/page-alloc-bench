@@ -70,6 +70,8 @@ func (w *workload) setup(ctx context.Context) error {
 	return err
 }
 
+var freeErrorLogged = false
+
 // per-CPU element of a workload. Assumes that the calling goroutine is already
 // pinned to an appropriate CPU.
 func (w *workload) runCPU(ctx context.Context) error {
@@ -77,23 +79,30 @@ func (w *workload) runCPU(ctx context.Context) error {
 
 	defer func() {
 		for _, page := range pages {
-			w.kmod.FreePage(page)
+			if err := w.kmod.FreePage(page); err != nil && !freeErrorLogged {
+				// The kmod also frees on rmmod so it might be OK.
+				fmt.Fprintf(os.Stderr, "Couldn't free one or more kernel pages, consider rebooting: %v\n", err)
+				freeErrorLogged = true
+			}
 			w.stats.pagesFreed.Add(1)
 		}
 	}()
 
-	for i := int64(0); i < w.pagesPerCPU; i++ {
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-
+	for ctx.Err() == nil {
 		page, err := w.kmod.AllocPage(0)
 		if err != nil {
-			return fmt.Errorf("allocating page %d: %v", i, err)
+			return fmt.Errorf("allocating page: %v", err)
 		}
 		w.stats.pagesAllocated.Add(1)
 
 		pages = append(pages, page)
+
+		if int64(len(pages)) >= w.pagesPerCPU {
+			if err := w.kmod.FreePage(pages[0]); err != nil {
+				return fmt.Errorf("freeing page: %v\n", err)
+			}
+			pages = pages[1:]
+		}
 	}
 
 	return nil
@@ -134,7 +143,8 @@ func (w *workload) run(ctx context.Context) error {
 	return eg.Wait()
 }
 
-// Run runs the workload
+// Run runs the workload. This workload runs continuously until cancellation,
+// then returns nil.
 func Run(ctx context.Context, opts *Options) error {
 	file, err := os.Open("/proc/page_alloc_bench")
 	if err != nil {
