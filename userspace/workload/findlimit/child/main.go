@@ -20,13 +20,21 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"os"
+	"runtime"
+	"sync"
+	"sync/atomic"
 	"syscall"
+
+	"golang.org/x/sync/errgroup"
 )
 
 var allocSizeFlag = flag.Int("alloc-size", 4096, "size in bytes of blocks to allocate in")
+
+var allocedBytes atomic.Int64
 
 func doMain() error {
 	// Ensure that this process is always the one killed by the OOM killer
@@ -37,22 +45,32 @@ func doMain() error {
 		return err
 	}
 
-	var allocedBytes int
-	for {
-		prot := syscall.PROT_READ | syscall.PROT_WRITE
-		flags := syscall.MAP_PRIVATE | syscall.MAP_ANONYMOUS
-		data, err := syscall.Mmap(-1, 0, *allocSizeFlag, prot, flags)
-		if err != nil {
-			return fmt.Errorf("mmap(%d): %v\n", *allocSizeFlag, err)
-		}
-		// Trigger faults to actually allocate page (or OOM-kill). Note that
-		// under THP some of these accesses aren't actually needed.
-		for offset := 0; offset < *allocSizeFlag; offset += os.Getpagesize() {
-			data[offset] = 0
-			allocedBytes += os.Getpagesize()
-			fmt.Printf("%d\n", allocedBytes)
-		}
+	var stdoutMutex sync.Mutex
+
+	eg, ctx := errgroup.WithContext(context.Background())
+	for i := 0; i < runtime.NumCPU(); i++ {
+		eg.Go(func() error {
+			for ctx.Err() == nil {
+				prot := syscall.PROT_READ | syscall.PROT_WRITE
+				flags := syscall.MAP_PRIVATE | syscall.MAP_ANONYMOUS
+				data, err := syscall.Mmap(-1, 0, *allocSizeFlag, prot, flags)
+				if err != nil {
+					return fmt.Errorf("mmap(%d): %v\n", *allocSizeFlag, err)
+				}
+				// Trigger faults to actually allocate page (or OOM-kill). Note that
+				// under THP some of these accesses aren't actually needed.
+				for offset := 0; offset < *allocSizeFlag; offset += os.Getpagesize() {
+					data[offset] = 0
+				}
+				allocedBytes.Add(int64(*allocSizeFlag))
+				stdoutMutex.Lock()
+				fmt.Printf("%d\n", allocedBytes.Load())
+				stdoutMutex.Unlock()
+			}
+			return ctx.Err()
+		})
 	}
+	return eg.Wait()
 }
 
 func main() {
