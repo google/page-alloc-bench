@@ -39,10 +39,16 @@ func (s ByteSize) Pages() int64 {
 }
 
 func (s ByteSize) String() string {
+	abs := s
+	if s < 0 {
+		abs = -s
+	}
 	switch {
-	case s < Megabyte:
-		return fmt.Sprintf("%dB")
-	case s < Gigabyte:
+	case abs < Kilobyte:
+		return fmt.Sprintf("%dB", s)
+	case abs < Megabyte:
+		return fmt.Sprintf("%.2fKiB", float64(s)/float64(Kilobyte))
+	case abs < Gigabyte:
 		return fmt.Sprintf("%.2fMiB", float64(s)/float64(Megabyte))
 	default:
 		return fmt.Sprintf("%.2fGiB", float64(s)/float64(Gigabyte))
