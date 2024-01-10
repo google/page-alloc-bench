@@ -131,7 +131,7 @@ func doMain() error {
 		defer cancel()
 		eg, ctx := errgroup.WithContext(ctx)
 		kallocFree, err := kallocfree.New(ctx, &kallocfree.Options{
-			TotalMemory: findlimitResult.Allocated - 128*pab.Megabyte,
+			TotalMemory: 128 * pab.Megabyte,
 		})
 		if err != nil {
 			return fmt.Errorf("setting up kallocfree workload: %v\n", err)
@@ -147,6 +147,9 @@ func doMain() error {
 				}
 			}
 		})
+		fmt.Printf("Waiting for kallocfree to reach steady state...\n")
+		kallocFree.AwaitSteadyState(ctx)
+		fmt.Printf("...Steady state reached.\n")
 		eg.Go(func() error {
 			// See how much memory seems to be in the system now.
 			result, err := findlimit.Run(ctx, &findlimit.Options{})
@@ -155,7 +158,7 @@ func doMain() error {
 			}
 			fmt.Printf("Result: %s (down from %s)\n", result.Allocated, findlimitResult.Allocated)
 			return nil
-		}
+		})
 		return eg.Wait()
 	default:
 		return fmt.Errorf("Invalid value for --workload - %q. Available: %s\n", *workloadFlag, allWorkloads)

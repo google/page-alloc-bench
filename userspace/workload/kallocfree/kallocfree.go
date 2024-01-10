@@ -47,10 +47,13 @@ func (s *stats) String() string {
 }
 
 type Workload struct {
-	kmod         *kmod.Connection
-	stats        *stats
-	testDataPath string // Path to a file with some data in it. Optional.
-	pagesPerCPU  int64
+	kmod               *kmod.Connection
+	stats              *stats
+	testDataPath       string // Path to a file with some data in it. Optional.
+	pagesPerCPU        int64
+	numThreads         int
+	steadyStateThreads atomic.Int32
+	steadyStateReached chan struct{} // Will be closed when stateStateThreads reaches numThreads
 	*pab.Cleanups
 }
 
@@ -88,6 +91,8 @@ func (w *Workload) runCPU(ctx context.Context) error {
 		}
 	}()
 
+	steady := false
+
 	for ctx.Err() == nil {
 		page, err := w.kmod.AllocPage(0)
 		if err != nil {
@@ -98,6 +103,13 @@ func (w *Workload) runCPU(ctx context.Context) error {
 		pages = append(pages, page)
 
 		if int64(len(pages)) >= w.pagesPerCPU {
+			if !steady {
+				if w.steadyStateThreads.Add(1) >= int32(w.numThreads) {
+					close(w.steadyStateReached)
+				}
+				steady = true
+			}
+
 			if err := w.kmod.FreePage(pages[0]); err != nil {
 				return fmt.Errorf("freeing page: %v\n", err)
 			}
@@ -122,7 +134,7 @@ func (w *Workload) Run(ctx context.Context) error {
 	// the proper stdlib yet, and it doesn't seem worth throwing away the
 	// no-Go-dependencies thing for that.
 	eg, ctx := errgroup.WithContext(ctx)
-	for cpu := 0; cpu < runtime.NumCPU(); cpu++ {
+	for cpu := 0; cpu < w.numThreads; cpu++ {
 		eg.Go(func() error {
 			// This means that the goroutine gets the thread to
 			// itself and the thread never gets migrated between
@@ -146,6 +158,15 @@ func (w *Workload) Run(ctx context.Context) error {
 	return eg.Wait()
 }
 
+// AwaitSteadyState blocks until the workload can be expected to be allocating
+// and freeing pages at the same rate.
+func (w *Workload) AwaitSteadyState(ctx context.Context) {
+	select {
+	case <-ctx.Done():
+	case <-w.steadyStateReached:
+	}
+}
+
 func New(ctx context.Context, opts *Options) (*Workload, error) {
 	file, err := os.Open("/proc/page_alloc_bench")
 	if err != nil {
@@ -154,9 +175,11 @@ func New(ctx context.Context, opts *Options) (*Workload, error) {
 	kmod := kmod.Connection{file}
 
 	return &Workload{
-		kmod:         &kmod,
-		stats:        &stats{},
-		pagesPerCPU:  opts.TotalMemory.Pages() / int64(runtime.NumCPU()),
-		testDataPath: opts.TestDataPath,
+		kmod:               &kmod,
+		stats:              &stats{},
+		pagesPerCPU:        opts.TotalMemory.Pages() / int64(runtime.NumCPU()),
+		testDataPath:       opts.TestDataPath,
+		steadyStateReached: make(chan struct{}),
+		numThreads:         runtime.NumCPU(),
 	}, nil
 }
