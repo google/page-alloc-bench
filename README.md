@@ -1,11 +1,13 @@
-tl;dr:
+# tl;dr
 
 ```sh
 sudo apt install go build-essential makeself
 make KDIR=$KERNEL_TREE page_alloc_bench.run
 scp page_alloc_bench.run $HOST:
-ssh $HOST sudo ./page_alloc_bench.run
+ssh $HOST sudo ./page_alloc_bench.run -- --workload=composite --timeout-s=0
 ```
+
+# Build and run
 
 Dependencies:
 
@@ -16,7 +18,7 @@ Dependencies:
 On Debian-alikes try `sudo apt install go build-essential makeself`.
 
 If you like to live dangerously, build against your current kernel with just
-`make`. Then `sudo ./run.sh` to run the thing.
+`make`. Then see `./run.sh --help` to run the thing.
 
 To run on another system, use `make KDIR=$KERNEL_TREE`. If that kernel was built
 with clang add `LLVM=1`. In theory I think you should only have to have done
