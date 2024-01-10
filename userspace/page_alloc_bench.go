@@ -85,6 +85,77 @@ func setupTestData(ctx context.Context, path string, c *pab.Cleanups) (string, e
 	return f.Name(), nil
 }
 
+func runKallocfree(ctx context.Context, c *pab.Cleanups) error {
+	testDataPath, err := setupTestData(ctx, *testDataPathFlag, c)
+	if err != nil {
+		return err
+	}
+
+	wl, err := kallocfree.New(ctx, &kallocfree.Options{
+		TotalMemory:  pab.ByteSize(*totalMemoryFlag),
+		TestDataPath: testDataPath,
+	})
+	if err != nil {
+		return fmt.Errorf("setting up kallocfree workload: %v\n", err)
+	}
+	return wl.Run(ctx)
+}
+
+func runFindlimit(ctx context.Context) error {
+	result, err := findlimit.Run(ctx, &findlimit.Options{})
+	if err != nil {
+		return err
+	}
+	fmt.Printf("Allocated %s\n", result.Allocated)
+	return nil
+}
+
+func runComposite(ctx context.Context) error {
+	// Figure out how much memory the system appears to have when idle.
+	fmt.Printf("Assessing system memory availability...\n")
+	findlimitResult, err := findlimit.Run(ctx, &findlimit.Options{})
+	if err != nil {
+		return fmt.Errorf("initial findlimit run: %v\n", err)
+	}
+	fmt.Printf("...Found %s available to userspace\n", findlimitResult.Allocated)
+
+	// Make the system busy with lots of background kernel allocations and frees.
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	eg, ctx := errgroup.WithContext(ctx)
+	kallocFree, err := kallocfree.New(ctx, &kallocfree.Options{
+		TotalMemory: 128 * pab.Megabyte,
+	})
+	if err != nil {
+		return fmt.Errorf("setting up kallocfree workload: %v\n", err)
+	}
+	eg.Go(func() error {
+		for {
+			err := kallocFree.Run(ctx)
+			if ctx.Err() != nil {
+				return nil
+			}
+			if err != nil {
+				return err
+			}
+		}
+	})
+	fmt.Printf("Waiting for kallocfree to reach steady state...\n")
+	kallocFree.AwaitSteadyState(ctx)
+	fmt.Printf("...Steady state reached.\n")
+	eg.Go(func() error {
+		// See how much memory seems to be in the system now.
+		result, err := findlimit.Run(ctx, &findlimit.Options{})
+		if err != nil {
+			return fmt.Errorf("antagonized findlimit run: %v\n", err)
+		}
+		fmt.Printf("Result: %s (down from %s)\n", result.Allocated, findlimitResult.Allocated)
+		cancel() // Done.
+		return nil
+	})
+	return eg.Wait()
+}
+
 func doMain() error {
 	ctx := context.Background()
 	if *timeoutSFlag != 0 {
@@ -96,76 +167,20 @@ func doMain() error {
 	var c pab.Cleanups
 	defer c.Run()
 	allWorkloads := "kallocfree, findlimit, composite"
+	var err error
 	switch *workloadFlag {
 	case "kallocfree":
-		testDataPath, err := setupTestData(ctx, *testDataPathFlag, &c)
-		if err != nil {
-			return err
-		}
-
-		wl, err := kallocfree.New(ctx, &kallocfree.Options{
-			TotalMemory:  pab.ByteSize(*totalMemoryFlag),
-			TestDataPath: testDataPath,
-		})
-		if err != nil {
-			return fmt.Errorf("setting up kallocfree workload: %v\n", err)
-		}
-		return wl.Run(ctx)
+		err = runKallocfree(ctx, &c)
 	case "findlimit":
-		result, err := findlimit.Run(ctx, &findlimit.Options{})
-		if err != nil {
-			return err
-		}
-		fmt.Printf("Allocated %s\n", result.Allocated)
+		err = runFindlimit(ctx)
 	case "composite":
-		// Figure out how much memory the system appears to have when idle.
-		fmt.Printf("Assessing system memory availability...\n")
-		findlimitResult, err := findlimit.Run(ctx, &findlimit.Options{})
-		if err != nil {
-			return fmt.Errorf("initial findlimit run: %v\n", err)
-		}
-		fmt.Printf("...Found %s available to userspace\n", findlimitResult.Allocated)
-
-		// Make the system busy with lots of background kernel allocations and frees.
-		ctx, cancel := context.WithCancel(ctx)
-		defer cancel()
-		eg, ctx := errgroup.WithContext(ctx)
-		kallocFree, err := kallocfree.New(ctx, &kallocfree.Options{
-			TotalMemory: 128 * pab.Megabyte,
-		})
-		if err != nil {
-			return fmt.Errorf("setting up kallocfree workload: %v\n", err)
-		}
-		eg.Go(func() error {
-			for {
-				err := kallocFree.Run(ctx)
-				if ctx.Err() != nil {
-					return nil
-				}
-				if err != nil {
-					return err
-				}
-			}
-		})
-		fmt.Printf("Waiting for kallocfree to reach steady state...\n")
-		kallocFree.AwaitSteadyState(ctx)
-		fmt.Printf("...Steady state reached.\n")
-		eg.Go(func() error {
-			// See how much memory seems to be in the system now.
-			result, err := findlimit.Run(ctx, &findlimit.Options{})
-			if err != nil {
-				return fmt.Errorf("antagonized findlimit run: %v\n", err)
-			}
-			fmt.Printf("Result: %s (down from %s)\n", result.Allocated, findlimitResult.Allocated)
-			return nil
-		})
-		return eg.Wait()
+		err = runComposite(ctx)
 	default:
 		return fmt.Errorf("Invalid value for --workload - %q. Available: %s\n", *workloadFlag, allWorkloads)
 	case "?":
 		fmt.Fprintf(os.Stdout, "Available workloads: %s\n", allWorkloads)
 	}
-	return nil
+	return err
 }
 
 func main() {
