@@ -103,11 +103,14 @@ func doMain() error {
 			return err
 		}
 
-		return kallocfree.Run(ctx, &kallocfree.Options{
+		wl, err := kallocfree.New(ctx, &kallocfree.Options{
 			TotalMemory:  pab.ByteSize(*totalMemoryFlag),
 			TestDataPath: testDataPath,
 		})
-
+		if err != nil {
+			return fmt.Errorf("setting up kallocfree workload: %v\n", err)
+		}
+		return wl.Run(ctx)
 	case "findlimit":
 		result, err := findlimit.Run(ctx, &findlimit.Options{})
 		if err != nil {
@@ -127,11 +130,15 @@ func doMain() error {
 		ctx, cancel := context.WithCancel(ctx)
 		defer cancel()
 		eg, ctx := errgroup.WithContext(ctx)
+		kallocFree, err := kallocfree.New(ctx, &kallocfree.Options{
+			TotalMemory: findlimitResult.Allocated - 128*pab.Megabyte,
+		})
+		if err != nil {
+			return fmt.Errorf("setting up kallocfree workload: %v\n", err)
+		}
 		eg.Go(func() error {
 			for {
-				err := kallocfree.Run(ctx, &kallocfree.Options{
-					TotalMemory: findlimitResult.Allocated - 128*pab.Megabyte,
-				})
+				err := kallocFree.Run(ctx)
 				if ctx.Err() != nil {
 					return nil
 				}

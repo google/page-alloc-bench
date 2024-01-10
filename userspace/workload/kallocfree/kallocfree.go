@@ -46,7 +46,7 @@ func (s *stats) String() string {
 	return fmt.Sprintf("pagesAllocated=%d pagesFreed=%d ", s.pagesAllocated.Load(), s.pagesFreed.Load())
 }
 
-type workload struct {
+type Workload struct {
 	kmod         *kmod.Connection
 	stats        *stats
 	testDataPath string // Path to a file with some data in it. Optional.
@@ -55,7 +55,7 @@ type workload struct {
 }
 
 // Run once on the system before each iteration of the workload.
-func (w *workload) setup(ctx context.Context) error {
+func (w *Workload) setup(ctx context.Context) error {
 	if w.testDataPath == "" {
 		return nil
 	}
@@ -74,7 +74,7 @@ var freeErrorLogged = false
 
 // per-CPU element of a workload. Assumes that the calling goroutine is already
 // pinned to an appropriate CPU.
-func (w *workload) runCPU(ctx context.Context) error {
+func (w *Workload) runCPU(ctx context.Context) error {
 	var pages []kmod.Page
 
 	defer func() {
@@ -108,8 +108,11 @@ func (w *workload) runCPU(ctx context.Context) error {
 	return nil
 }
 
-// Overall run function, call once from anywhere.
-func (w *workload) run(ctx context.Context) error {
+// Run runs the workload. This workload runs continuously until cancellation,
+// then returns nil. You may only call this merthod once.
+func (w *Workload) Run(ctx context.Context) error {
+	defer w.kmod.Close()
+
 	fmt.Printf("Running global workload setup\n")
 	w.setup(ctx)
 
@@ -143,27 +146,17 @@ func (w *workload) run(ctx context.Context) error {
 	return eg.Wait()
 }
 
-// Run runs the workload. This workload runs continuously until cancellation,
-// then returns nil.
-func Run(ctx context.Context, opts *Options) error {
+func New(ctx context.Context, opts *Options) (*Workload, error) {
 	file, err := os.Open("/proc/page_alloc_bench")
 	if err != nil {
-		return fmt.Errorf("Opening /proc/page_alloc_bench: %v", err)
+		return nil, fmt.Errorf("opening /proc/page_alloc_bench: %v", err)
 	}
 	kmod := kmod.Connection{file}
-	defer kmod.Close()
 
-	var stats stats
-
-	workload := workload{
+	return &Workload{
 		kmod:         &kmod,
-		stats:        &stats,
+		stats:        &stats{},
 		pagesPerCPU:  opts.TotalMemory.Pages() / int64(runtime.NumCPU()),
 		testDataPath: opts.TestDataPath,
-	}
-
-	err = workload.run(ctx)
-	fmt.Printf("stats: %s\n", workload.stats.String())
-
-	return err
+	}, nil
 }
