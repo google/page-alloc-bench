@@ -122,7 +122,7 @@ func doMain() error {
 		fmt.Printf("Assessing system memory availability...\n")
 		findlimitResult, err := findlimit.Run(ctx, &findlimit.Options{})
 		if err != nil {
-			return err
+			return fmt.Errorf("initial findlimit run: %v\n", err)
 		}
 		fmt.Printf("...Found %s available to userspace\n", findlimitResult.Allocated)
 
@@ -151,7 +151,7 @@ func doMain() error {
 		// See how much memory seems to be in the system now.
 		result, err := findlimit.Run(ctx, &findlimit.Options{})
 		if err != nil {
-			return err
+			return fmt.Errorf("antagonized findlimit run: %v\n", err)
 		}
 		fmt.Printf("Result: %s (down from %s)\n", result.Allocated, findlimitResult.Allocated)
 
