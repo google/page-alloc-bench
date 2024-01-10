@@ -147,14 +147,16 @@ func doMain() error {
 				}
 			}
 		})
-
-		// See how much memory seems to be in the system now.
-		result, err := findlimit.Run(ctx, &findlimit.Options{})
-		if err != nil {
-			return fmt.Errorf("antagonized findlimit run: %v\n", err)
+		eg.Go(func() error {
+			// See how much memory seems to be in the system now.
+			result, err := findlimit.Run(ctx, &findlimit.Options{})
+			if err != nil {
+				return fmt.Errorf("antagonized findlimit run: %v\n", err)
+			}
+			fmt.Printf("Result: %s (down from %s)\n", result.Allocated, findlimitResult.Allocated)
+			return nil
 		}
-		fmt.Printf("Result: %s (down from %s)\n", result.Allocated, findlimitResult.Allocated)
-
+		return eg.Wait()
 	default:
 		return fmt.Errorf("Invalid value for --workload - %q. Available: %s\n", *workloadFlag, allWorkloads)
 	case "?":
