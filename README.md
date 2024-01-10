@@ -35,3 +35,15 @@ binary with `makeself`. This isn't in the default target, you need to explicitly
 list it as the make goal. You can then copy this onto some other system, running
 the kernel from your `$KERNEL_TREE` and just execute it. This is optional, you
 can also just copy all the relevant files manually and run `run.sh` directly.
+
+# Output
+
+For `--workload=composite` you can pass `--output-path`, data measured by the
+workload will be written there as JSON. This currently only has one field:
+
+- `memory_available_diff_bytes`: This workload attempts to allocate as much memory as
+  possible from userspace. It then does this again while simultaneously
+  allocating then freeing kernel pages on all CPUs. This metric measures the
+  difference between the amount of memory available the first time and the
+  second time, accounting for the amount of memory that the kernel allocations
+  take up. On a well-performing system this should be 0.

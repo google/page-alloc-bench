@@ -17,6 +17,7 @@ package main
 import (
 	"context"
 	"crypto/rand"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -35,6 +36,7 @@ var (
 	totalMemoryFlag  = flag.Int64("total-memory", (256 * pab.Megabyte).Bytes(), "Total memory to allocate in bytes")
 	timeoutSFlag     = flag.Int("timeout-s", 10, "Timeout in seconds. Set 0 for no timeout")
 	testDataPathFlag = flag.String("test-data-path", "", "For dev, path to reuse for test data")
+	outputPathFlag   = flag.String("output-path", "", "File to write JSON results to. See README for specification.")
 )
 
 // Create a bunch of data we can later use to fill up the page cache.
@@ -110,24 +112,30 @@ func runFindlimit(ctx context.Context) error {
 	return nil
 }
 
-func runComposite(ctx context.Context) error {
+// Result for the "composite" benchmark. Fields specified in README.
+type CompositeResult struct {
+	MemoryAvailableDiffBytes int64 `json:"memory_available_diff_bytes"`
+}
+
+func runComposite(ctx context.Context) (*CompositeResult, error) {
 	// Figure out how much memory the system appears to have when idle.
 	fmt.Printf("Assessing system memory availability...\n")
-	findlimitResult, err := findlimit.Run(ctx, &findlimit.Options{})
+	findlimitResult1, err := findlimit.Run(ctx, &findlimit.Options{})
 	if err != nil {
-		return fmt.Errorf("initial findlimit run: %v\n", err)
+		return nil, fmt.Errorf("initial findlimit run: %v\n", err)
 	}
-	fmt.Printf("...Found %s available to userspace\n", findlimitResult.Allocated)
+	fmt.Printf("...Found %s available to userspace\n", findlimitResult1.Allocated)
 
 	// Make the system busy with lots of background kernel allocations and frees.
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	eg, ctx := errgroup.WithContext(ctx)
+	kernelUsage := 128 * pab.Megabyte
 	kallocFree, err := kallocfree.New(ctx, &kallocfree.Options{
-		TotalMemory: 128 * pab.Megabyte,
+		TotalMemory: kernelUsage,
 	})
 	if err != nil {
-		return fmt.Errorf("setting up kallocfree workload: %v\n", err)
+		return nil, fmt.Errorf("setting up kallocfree workload: %v\n", err)
 	}
 	eg.Go(func() error {
 		for {
@@ -143,17 +151,29 @@ func runComposite(ctx context.Context) error {
 	fmt.Printf("Waiting for kallocfree to reach steady state...\n")
 	kallocFree.AwaitSteadyState(ctx)
 	fmt.Printf("...Steady state reached.\n")
+	var result CompositeResult
 	eg.Go(func() error {
 		// See how much memory seems to be in the system now.
-		result, err := findlimit.Run(ctx, &findlimit.Options{})
+		findlimitResult2, err := findlimit.Run(ctx, &findlimit.Options{})
 		if err != nil {
 			return fmt.Errorf("antagonized findlimit run: %v\n", err)
 		}
-		fmt.Printf("Result: %s (down from %s)\n", result.Allocated, findlimitResult.Allocated)
+		fmt.Printf("Result: %s (down from %s)\n", findlimitResult2.Allocated, findlimitResult1.Allocated)
+		diff := findlimitResult1.Allocated - (findlimitResult2.Allocated + kernelUsage)
+		fmt.Printf("Diff in memory availability: %s\n", diff)
+		result.MemoryAvailableDiffBytes = diff.Bytes()
 		cancel() // Done.
 		return nil
 	})
-	return eg.Wait()
+	return &result, eg.Wait()
+}
+
+func writeOutput(path string, result *CompositeResult) error {
+	output, err := json.Marshal(result)
+	if err != nil {
+		return fmt.Errorf("marshalling JSON output: %v\n", err)
+	}
+	return os.WriteFile(path, output, 0644)
 }
 
 func doMain() error {
@@ -167,6 +187,7 @@ func doMain() error {
 	var c pab.Cleanups
 	defer c.Run()
 	allWorkloads := "kallocfree, findlimit, composite"
+	var result *CompositeResult
 	var err error
 	switch *workloadFlag {
 	case "kallocfree":
@@ -174,13 +195,23 @@ func doMain() error {
 	case "findlimit":
 		err = runFindlimit(ctx)
 	case "composite":
-		err = runComposite(ctx)
+		result, err = runComposite(ctx)
 	default:
 		return fmt.Errorf("Invalid value for --workload - %q. Available: %s\n", *workloadFlag, allWorkloads)
 	case "?":
 		fmt.Fprintf(os.Stdout, "Available workloads: %s\n", allWorkloads)
 	}
-	return err
+	if err != nil {
+		return err
+	}
+
+	if *outputPathFlag != "" {
+		if result == nil {
+			return fmt.Errorf("this workload doesn't support --outputpath")
+		}
+		return writeOutput(*outputPathFlag, result)
+	}
+	return nil
 }
 
 func main() {
