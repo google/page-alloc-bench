@@ -77,11 +77,9 @@ func Run(ctx context.Context, opts *Options) (*Result, error) {
 	if err != nil {
 		return nil, fmt.Errorf("workload subprocess failed: %v\n", err)
 	}
-	numBytes, err := strconv.ParseInt(strings.TrimSpace(lastLine), 10, 64)
-	if err != nil {
-		return nil, fmt.Errorf("parsing last line of workload subprocess output (%q) as int: %v\n",
-			lastLine, err)
-	}
+	// We check the exit conditions of the child process before trying to parse
+	// the output as an int. Hopefully this will give us a more useful clue if
+	// something caused the workload to shut down immediately.
 	err = cmd.Wait()
 	if err == nil {
 		return nil, fmt.Errorf("expected workload subprocess to get OOM-killed, but it succeeded")
@@ -95,6 +93,11 @@ func Run(ctx context.Context, opts *Options) (*Result, error) {
 	if cmd.ProcessState.Exited() {
 		return nil, fmt.Errorf("expected workload subprocessed to be killed by signal, but it exited (status %d)",
 			exitErr.ExitCode())
+	}
+	numBytes, err := strconv.ParseInt(strings.TrimSpace(lastLine), 10, 64)
+	if err != nil {
+		return nil, fmt.Errorf("parsing last line of workload subprocess output (%q) as int: %v\n",
+			lastLine, err)
 	}
 	return &Result{pab.ByteSize(numBytes)}, nil
 }
