@@ -54,7 +54,6 @@ type Workload struct {
 	numThreads         int
 	steadyStateThreads atomic.Int32
 	steadyStateReached chan struct{} // Will be closed when stateStateThreads reaches numThreads
-	*pab.Cleanups
 }
 
 // Run once on the system before each iteration of the workload.

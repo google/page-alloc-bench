@@ -19,7 +19,6 @@ package pab
 import (
 	"fmt"
 	"os"
-	"slices"
 )
 
 const (
@@ -53,23 +52,4 @@ func (s ByteSize) String() string {
 	default:
 		return fmt.Sprintf("%.2fGiB", float64(s)/float64(Gigabyte))
 	}
-}
-
-// Cleanups provides functionality like testing.T.Cleanup.
-type Cleanups struct {
-	funcs []func()
-}
-
-// Cleanup adds a cleanup.
-func (c *Cleanups) Cleanup(f func()) {
-	c.funcs = append(c.funcs, f)
-}
-
-// Run runs the cleanups in the reverse order of the Cleanup() calls.
-func (c *Cleanups) Run() {
-	slices.Reverse(c.funcs)
-	for _, f := range c.funcs {
-		f()
-	}
-	c.funcs = nil
 }
