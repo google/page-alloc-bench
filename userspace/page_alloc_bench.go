@@ -34,7 +34,7 @@ var (
 )
 
 type Result struct {
-	MemoryAvailableDiffBytes int64 `json:"memory_available_diff_bytes"`
+	MemoryAvailableBytes int64 `json:"memory_available_bytes"`
 }
 
 func run(ctx context.Context) (*Result, error) {
@@ -79,9 +79,7 @@ func run(ctx context.Context) (*Result, error) {
 			return fmt.Errorf("antagonized findlimit run: %v\n", err)
 		}
 		fmt.Printf("Result: %s (down from %s)\n", findlimitResult2.Allocated, findlimitResult1.Allocated)
-		diff := findlimitResult1.Allocated - (findlimitResult2.Allocated + kernelUsage)
-		fmt.Printf("Diff in memory availability: %s\n", diff)
-		result.MemoryAvailableDiffBytes = diff.Bytes()
+		result.MemoryAvailableBytes = findlimitResult2.Allocated.Bytes()
 		cancel() // Done.
 		return nil
 	})

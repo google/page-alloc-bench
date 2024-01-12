@@ -41,9 +41,7 @@ can also just copy all the relevant files manually and run `run.sh` directly.
 For `--workload=composite` you can pass `--output-path`, data measured by the
 workload will be written there as JSON. This currently only has one field:
 
-- `memory_available_diff_bytes`: This workload attempts to allocate as much memory as
+- `memory_available_bytes`: This workload attempts to allocate as much memory as
   possible from userspace. It then does this again while simultaneously
-  allocating then freeing kernel pages on all CPUs. This metric measures the
-  difference between the amount of memory available the first time and the
-  second time, accounting for the amount of memory that the kernel allocations
-  take up. On a well-performing system this should be 0.
+  allocating then freeing kernel pages on all CPUs. This metric reports how much
+  it was able to allocate the second time. You don't want this number to go down.
