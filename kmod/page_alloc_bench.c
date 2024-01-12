@@ -101,6 +101,8 @@ static void alloced_pages_free_all(void)
 			WARN_ON(ap->aps != aps);
 			list_del(&ap->node);
 			__free_page(virt_to_page(ap));
+
+			cond_resched();
 		}
 	}
 }
