@@ -20,21 +20,28 @@
 package main
 
 import (
-	"context"
 	"flag"
 	"fmt"
+	"log"
+	"math/bits"
 	"os"
 	"runtime"
 	"sync"
-	"sync/atomic"
 	"syscall"
 
-	"golang.org/x/sync/errgroup"
+	"github.com/google/page_alloc_bench/pab"
 )
 
-var allocSizeFlag = flag.Int("alloc-size", 4096, "size in bytes of blocks to allocate in")
+var (
+	initAllocSize = flag.Int("init-alloc-size", 0, "Size of initial up-front alloc. Optional.")
+	allocSize     = flag.Int("alloc-size", 0, "Size of subsequent individual allocs.")
+)
 
-var allocedBytes atomic.Int64
+func mmap(size int) ([]byte, error) {
+	prot := syscall.PROT_READ | syscall.PROT_WRITE
+	flags := syscall.MAP_PRIVATE | syscall.MAP_ANONYMOUS
+	return syscall.Mmap(-1, 0, size, prot, flags)
+}
 
 func doMain() error {
 	// Ensure that this process is always the one killed by the OOM killer
@@ -45,32 +52,50 @@ func doMain() error {
 		return err
 	}
 
-	var stdoutMutex sync.Mutex
+	// Having each goroutine below contend on a mutex to write stdout turned out
+	// to be super slow. So we do The Go Thing and collect everything in a
+	// separate goroutine.
+	allocedBytes := int64(0)
+	allocCh := make(chan int64, 4096) // Buffering is just for performance.
+	go func() {
+		for size := range allocCh {
+			allocedBytes += size
+			fmt.Printf("%d\n", allocedBytes)
+		}
+	}()
 
-	eg, ctx := errgroup.WithContext(context.Background())
-	for i := 0; i < runtime.NumCPU(); i++ {
-		eg.Go(func() error {
-			for ctx.Err() == nil {
-				prot := syscall.PROT_READ | syscall.PROT_WRITE
-				flags := syscall.MAP_PRIVATE | syscall.MAP_ANONYMOUS
-				data, err := syscall.Mmap(-1, 0, *allocSizeFlag, prot, flags)
-				if err != nil {
-					return fmt.Errorf("mmap(%d): %v\n", *allocSizeFlag, err)
+	for {
+		// Make this bigger to reduce the number of syscalls and speed the benchmark
+		// up. Make it smaller to make the benchmark work on teeny weeny leedle
+		// computers. The code below assumes it's a multiple of the page size.
+		const mmapSize = 256 * pab.Megabyte
+		data, err := mmap(int(mmapSize.Bytes()))
+		if err != nil {
+			log.Fatalf("mmap failed. Computer too teeny? /proc/sys/vm/overcommit_memory set to 2? %v", err)
+		}
+
+		// Touch pages to actually fault them into memory, this is where the
+		// real allocation happens. We'll do this in parallel for speed. We
+		// divide the mmaped region into equally sized chunks and run a
+		// goroutine per chunk, to make them equally sized we just divide them
+		// into a power of two. I can't do maths with other numbers sorry.
+		goros := 1 << (63 - bits.LeadingZeros64(uint64(runtime.NumCPU())))
+		chunkSize := mmapSize.Bytes() / int64(goros)
+		pageSize := int64(os.Getpagesize()) // This is a syscall so just do it once.
+		var wg sync.WaitGroup
+		for chunkStart := int64(0); chunkStart < mmapSize.Bytes(); chunkStart += chunkSize {
+			wg.Add(1)
+			go func() {
+				for offset := int64(0); offset < chunkSize; offset += pageSize {
+					data[chunkStart+offset] = 0
+					allocCh <- pageSize
 				}
-				// Trigger faults to actually allocate page (or OOM-kill). Note that
-				// under THP some of these accesses aren't actually needed.
-				for offset := 0; offset < *allocSizeFlag; offset += os.Getpagesize() {
-					data[offset] = 0
-				}
-				allocedBytes.Add(int64(*allocSizeFlag))
-				stdoutMutex.Lock()
-				fmt.Printf("%d\n", allocedBytes.Load())
-				stdoutMutex.Unlock()
-			}
-			return ctx.Err()
-		})
+				wg.Done()
+			}()
+		}
+
+		wg.Wait()
 	}
-	return eg.Wait()
 }
 
 func main() {
