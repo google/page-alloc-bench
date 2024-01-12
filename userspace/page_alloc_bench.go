@@ -34,7 +34,7 @@ import (
 var (
 	workloadFlag     = flag.String("workload", "", "Worklad to run. Required. Pass ? to see available workloads")
 	totalMemoryFlag  = flag.Int64("total-memory", (256 * pab.Megabyte).Bytes(), "Total memory to allocate in bytes")
-	timeoutSFlag     = flag.Int("timeout-s", 10, "Timeout in seconds. Set 0 for no timeout")
+	timeoutSFlag     = flag.Int("timeout-s", 0, "Timeout in seconds. Set 0 for no timeout (default)")
 	testDataPathFlag = flag.String("test-data-path", "", "For dev, path to reuse for test data")
 	outputPathFlag   = flag.String("output-path", "", "File to write JSON results to. See README for specification.")
 )
