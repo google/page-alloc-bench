@@ -27,6 +27,7 @@ import (
 	"os"
 	"runtime"
 	"sync"
+	"sync/atomic"
 	"syscall"
 
 	"github.com/google/page_alloc_bench/pab"
@@ -52,15 +53,18 @@ func doMain() error {
 		return err
 	}
 
-	// Having each goroutine below contend on a mutex to write stdout turned out
-	// to be super slow. So we do The Go Thing and collect everything in a
-	// separate goroutine.
-	allocedBytes := int64(0)
-	allocCh := make(chan int64, 4096) // Buffering is just for performance.
+	// Having the goroutines below contend for stdout is obviously (in
+	// retrospect, lol) not workable. The Go Way would be to have them all send
+	// down a channel and then have a reader goroutine add up the results and
+	// print them periodically. Experimentally, it seems tricky to make this
+	// fast; I'm not sure if that's just a tuning problem or if hundreds of
+	// goroutines contending to send on a channel is inherently slow. Anyway, it
+	// turns out the dumbest possible thing is really fast: they can all just
+	// contend on an atomic variable which we then print in a loop.
+	var allocedBytes atomic.Int64
 	go func() {
-		for size := range allocCh {
-			allocedBytes += size
-			fmt.Printf("%d\n", allocedBytes)
+		for {
+			fmt.Printf("%d\n", allocedBytes.Load())
 		}
 	}()
 
@@ -68,7 +72,7 @@ func doMain() error {
 		// Make this bigger to reduce the number of syscalls and speed the benchmark
 		// up. Make it smaller to make the benchmark work on teeny weeny leedle
 		// computers. The code below assumes it's a multiple of the page size.
-		const mmapSize = 256 * pab.Megabyte
+		const mmapSize = 8 * pab.Gigabyte
 		data, err := mmap(int(mmapSize.Bytes()))
 		if err != nil {
 			log.Fatalf("mmap failed. Computer too teeny? /proc/sys/vm/overcommit_memory set to 2? %v", err)
@@ -88,7 +92,7 @@ func doMain() error {
 			go func() {
 				for offset := int64(0); offset < chunkSize; offset += pageSize {
 					data[chunkStart+offset] = 0
-					allocCh <- pageSize
+					allocedBytes.Add(int64(pageSize))
 				}
 				wg.Done()
 			}()
