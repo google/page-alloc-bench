@@ -41,8 +41,11 @@ can also just copy all the relevant files manually and run `run.sh` directly.
 You can pass `--output-path`, data measured by the workload will be written
 there as JSON. This currently only has one field:
 
-- `memory_available_bytes`: This workload attempts to allocate as much memory as
+- `idle_available_bytes`: This workload attempts to allocate as much memory as
   possible from userspace. It then does this again while simultaneously
   allocating then freeing kernel pages on all CPUs. This metric reports how much
   it was able to allocate the second time. You don't want this number to go
-  down.
+  down. The allocation is repeated, this field has one item for each iteration.
+- `antagonized_available_bytes`: This is like `idle_available_bytes`, but it's
+  measured while an antagonistic kernel allocation workload runs in the
+  background.

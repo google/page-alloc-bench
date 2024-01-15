@@ -31,20 +31,39 @@ import (
 var (
 	timeoutSFlag   = flag.Int("timeout-s", 0, "Timeout in seconds. Set 0 for no timeout (default)")
 	outputPathFlag = flag.String("output-path", "", "File to write JSON results to. See README for specification.")
+	iterationsFlag = flag.Int("iterations", 5, "Iterations")
 )
 
 type Result struct {
-	MemoryAvailableBytes int64 `json:"memory_available_bytes"`
+	IdleAvailableBytes        []int64 `json:"idle_available_bytes"`
+	AntagonizedAvailableBytes []int64 `json:"antagonized_available_bytes"`
+}
+
+// Runs findlimit workload @iterations times, appends result to @result.
+func repeatFindlimit(ctx context.Context, iterations int, result *[]int64, desc string) error {
+	for i := 1; i <= iterations; i++ {
+		if ctx.Err() != nil {
+			return nil
+		}
+		findlimitResult, err := findlimit.Run(ctx, &findlimit.Options{})
+		if err != nil {
+			return fmt.Errorf("%s findlimit run %d: %v\n", desc, i, err)
+		}
+		fmt.Printf("\tIteration %d/%d: %s available on %s system\n",
+			i, *iterationsFlag, findlimitResult.Allocated, desc)
+		*result = append(*result, findlimitResult.Allocated.Bytes())
+	}
+	return nil
 }
 
 func run(ctx context.Context) (*Result, error) {
+	var result Result
+
 	// Figure out how much memory the system appears to have when idle.
 	fmt.Printf("Assessing system memory availability...\n")
-	findlimitResult1, err := findlimit.Run(ctx, &findlimit.Options{})
-	if err != nil {
-		return nil, fmt.Errorf("initial findlimit run: %v\n", err)
+	if err := repeatFindlimit(ctx, *iterationsFlag, &result.IdleAvailableBytes, "initial"); err != nil {
+		return nil, err
 	}
-	fmt.Printf("...Found %s available to userspace\n", findlimitResult1.Allocated)
 
 	// Make the system busy with lots of background kernel allocations and frees.
 	ctx, cancel := context.WithCancel(ctx)
@@ -71,15 +90,11 @@ func run(ctx context.Context) (*Result, error) {
 	fmt.Printf("Waiting for kallocfree to reach steady state...\n")
 	kallocFree.AwaitSteadyState(ctx)
 	fmt.Printf("...Steady state reached.\n")
-	var result Result
 	eg.Go(func() error {
 		// See how much memory seems to be in the system now.
-		findlimitResult2, err := findlimit.Run(ctx, &findlimit.Options{})
-		if err != nil {
-			return fmt.Errorf("antagonized findlimit run: %v\n", err)
+		if err := repeatFindlimit(ctx, *iterationsFlag, &result.AntagonizedAvailableBytes, "antagonized"); err != nil {
+			return err
 		}
-		fmt.Printf("Result: %s (down from %s)\n", findlimitResult2.Allocated, findlimitResult1.Allocated)
-		result.MemoryAvailableBytes = findlimitResult2.Allocated.Bytes()
 		cancel() // Done.
 		return nil
 	})
