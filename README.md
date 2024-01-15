@@ -4,7 +4,7 @@
 sudo apt install go build-essential makeself
 make KDIR=$KERNEL_TREE page_alloc_bench.run
 scp page_alloc_bench.run $HOST:
-ssh $HOST sudo ./page_alloc_bench.run -- --workload=composite --timeout-s=0
+ssh $HOST sudo ./page_alloc_bench.run
 ```
 
 # Build and run
@@ -38,10 +38,11 @@ can also just copy all the relevant files manually and run `run.sh` directly.
 
 # Output
 
-For `--workload=composite` you can pass `--output-path`, data measured by the
-workload will be written there as JSON. This currently only has one field:
+You can pass `--output-path`, data measured by the workload will be written
+there as JSON. This currently only has one field:
 
 - `memory_available_bytes`: This workload attempts to allocate as much memory as
   possible from userspace. It then does this again while simultaneously
   allocating then freeing kernel pages on all CPUs. This metric reports how much
-  it was able to allocate the second time. You don't want this number to go down.
+  it was able to allocate the second time. You don't want this number to go
+  down.
