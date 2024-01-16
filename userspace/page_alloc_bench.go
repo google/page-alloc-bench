@@ -59,6 +59,15 @@ func repeatFindlimit(ctx context.Context, iterations int, result *[]int64, desc 
 func run(ctx context.Context) (*Result, error) {
 	var result Result
 
+	// We're not running this just yet, btu set it upt now to fail fast.
+	kernelUsage := 128 * pab.Megabyte
+	kallocFree, err := kallocfree.New(ctx, &kallocfree.Options{
+		TotalMemory: kernelUsage,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("setting up kallocfree workload: %v\n", err)
+	}
+
 	// Figure out how much memory the system appears to have when idle.
 	fmt.Printf("Assessing system memory availability...\n")
 	if err := repeatFindlimit(ctx, *iterationsFlag, &result.IdleAvailableBytes, "initial"); err != nil {
@@ -69,13 +78,6 @@ func run(ctx context.Context) (*Result, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	eg, ctx := errgroup.WithContext(ctx)
-	kernelUsage := 128 * pab.Megabyte
-	kallocFree, err := kallocfree.New(ctx, &kallocfree.Options{
-		TotalMemory: kernelUsage,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("setting up kallocfree workload: %v\n", err)
-	}
 	eg.Go(func() error {
 		for {
 			err := kallocFree.Run(ctx)
