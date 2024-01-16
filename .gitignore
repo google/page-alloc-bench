@@ -1,2 +1,3 @@
 .makeself-build/
 page_alloc_bench.run
+.cache
