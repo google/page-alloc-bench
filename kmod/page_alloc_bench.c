@@ -17,6 +17,7 @@
 
 #include <linux/cdev.h>
 #include <linux/fs.h>
+#include <linux/mm.h>
 #include <linux/module.h>
 #include <linux/proc_fs.h>
 #include <linux/uaccess.h>
@@ -124,8 +125,10 @@ static long pab_ioctl(struct file *file, unsigned int cmd, unsigned long arg) {
 
 			alloced_pages_store(page, ioctl.args.order);
 
-			return put_user((unsigned long)page,
-					&((struct pab_ioctl_alloc_page *)arg)->result.id);
+			ioctl.result.id = (unsigned long)page;
+			ioctl.result.nid = page_to_nid(page);
+			return copy_to_user(&((struct pab_ioctl_alloc_page *)arg)->result,
+					    &ioctl.result, sizeof(ioctl.result));
 		}
 		case PAB_IOCTL_FREE_PAGE: {
 			struct page *page = (struct page *)arg;
