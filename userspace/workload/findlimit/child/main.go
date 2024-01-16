@@ -75,7 +75,8 @@ func doMain() error {
 		const mmapSize = 8 * pab.Gigabyte
 		data, err := mmap(int(mmapSize.Bytes()))
 		if err != nil {
-			log.Fatalf("mmap failed. Computer too teeny? /proc/sys/vm/overcommit_memory set to 2? %v", err)
+			log.Fatalf("mmap(%s) failed. Computer too teeny? /proc/sys/vm/overcommit_memory set to 2? %v",
+				mmapSize, err)
 		}
 
 		// Touch pages to actually fault them into memory, this is where the
