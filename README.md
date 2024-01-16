@@ -53,3 +53,6 @@ there as JSON. This currently only has one field:
   could allocate
 - `kernel_page_allocs_remote`: Of the above, the number of pages that came from
   a remote NUMA node.
+- `kernel_page_alloc_latencies_ns`: Sample of latencies for the kernel
+  allocation call. This is just the last N samples, no proper sampling logic is
+  implemented.

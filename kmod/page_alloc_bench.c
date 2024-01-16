@@ -17,6 +17,7 @@
 
 #include <linux/cdev.h>
 #include <linux/fs.h>
+#include <linux/ktime.h>
 #include <linux/mm.h>
 #include <linux/module.h>
 #include <linux/proc_fs.h>
@@ -114,14 +115,17 @@ static long pab_ioctl(struct file *file, unsigned int cmd, unsigned long arg) {
 			struct pab_ioctl_alloc_page ioctl;
 			struct page *page;
 			int err;
+			ktime_t start;
 
 			err = copy_from_user(&ioctl, (void *)arg, sizeof(struct pab_ioctl_alloc_page));
 			if (err)
 				return err;
 
+			start = ktime_get();
 			page = alloc_pages(GFP_KERNEL, ioctl.args.order);
 			if (!page)
 				return -ENOMEM;
+			ioctl.result.latency_ns = ktime_to_ns(ktime_sub(ktime_get(), start));
 
 			alloced_pages_store(page, ioctl.args.order);
 

@@ -35,10 +35,11 @@ var (
 )
 
 type Result struct {
-	IdleAvailableBytes        []int64 `json:"idle_available_bytes"`
-	AntagonizedAvailableBytes []int64 `json:"antagonized_available_bytes"`
-	KernelPageAllocs          int64   `json:"kernel_page_allocs"`
-	KernelPageAllocsRemote    int64   `json:"kernel_page_allocs_remote"`
+	IdleAvailableBytes         []int64 `json:"idle_available_bytes"`
+	AntagonizedAvailableBytes  []int64 `json:"antagonized_available_bytes"`
+	KernelPageAllocs           int64   `json:"kernel_page_allocs"`
+	KernelPageAllocsRemote     int64   `json:"kernel_page_allocs_remote"`
+	KernelPageAllocLatenciesNS []int64 `json:"kernel_page_alloc_latencies_ns"`
 }
 
 // Runs findlimit workload @iterations times, appends result to @result.
@@ -81,17 +82,16 @@ func run(ctx context.Context) (*Result, error) {
 	defer cancel()
 	eg, ctx := errgroup.WithContext(ctx)
 	eg.Go(func() error {
-		for {
-			kallocfreeResult, err := kallocFree.Run(ctx)
-			if err != nil {
-				return err
-			}
-			result.KernelPageAllocs += int64(kallocfreeResult.PagesAllocated)
-			result.KernelPageAllocsRemote += int64(kallocfreeResult.NUMARemoteAllocations)
-			if ctx.Err() != nil {
-				return nil
-			}
+		kallocfreeResult, err := kallocFree.Run(ctx)
+		if err != nil {
+			return err
 		}
+		result.KernelPageAllocs += int64(kallocfreeResult.PagesAllocated)
+		result.KernelPageAllocsRemote += int64(kallocfreeResult.NUMARemoteAllocations)
+		for _, l := range kallocfreeResult.Latencies {
+			result.KernelPageAllocLatenciesNS = append(result.KernelPageAllocLatenciesNS, l.Nanoseconds())
+		}
+		return nil
 	})
 	fmt.Printf("Waiting for kallocfree to reach steady state...\n")
 	kallocFree.AwaitSteadyState(ctx)

@@ -28,6 +28,7 @@ struct pab_ioctl_alloc_page {
 	struct {
 		unsigned long id; /* Opaque ID for the allocated page, used to free. */
 		int nid; /* NUMA node ID, or -1. */
+		long latency_ns;
 	} result;
 };
 #define PAB_IOCTL_ALLOC_PAGE	_IOWR(PAB_IOCTL_BASE, 1, struct pab_ioctl_alloc_page)

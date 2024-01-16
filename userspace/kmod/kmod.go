@@ -18,6 +18,7 @@ package kmod
 
 import (
 	"os"
+	"time"
 	"unsafe"
 
 	"github.com/google/page_alloc_bench/linux"
@@ -40,8 +41,9 @@ type Connection struct {
 
 // Page represents a page allocated by the kernel module.
 type Page struct {
-	NID int     // NUMA node ID
-	id  C.ulong // Opaque ID (spoiler: struct page *) used to free it.
+	NID     int           // NUMA node ID
+	Latency time.Duration // Excluding syscall/userspace overhead.
+	id      C.ulong       // Opaque ID (spoiler: struct page *) used to free it.
 }
 
 // AllocPage allocates a page.
@@ -50,8 +52,9 @@ func (k *Connection) AllocPage(order int) (*Page, error) {
 	ioctl.args.order = C.int(order)
 	err := linux.Ioctl(k.File, C.pab_ioctl_alloc_page, uintptr(unsafe.Pointer(&ioctl)))
 	p := Page{
-		id:  ioctl.result.id,
-		NID: int(ioctl.result.nid),
+		id:      ioctl.result.id,
+		Latency: time.Duration(ioctl.result.latency_ns) * time.Nanosecond,
+		NID:     int(ioctl.result.nid),
 	}
 	return &p, err
 }

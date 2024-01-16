@@ -23,7 +23,9 @@ import (
 	"io"
 	"os"
 	"runtime"
+	"slices"
 	"sync/atomic"
+	"time"
 
 	"github.com/google/page_alloc_bench/kmod"
 	"github.com/google/page_alloc_bench/linux"
@@ -41,12 +43,14 @@ type stats struct {
 	pagesAllocated        atomic.Uint64
 	pagesFreed            atomic.Uint64
 	numaRemoteAllocations atomic.Uint64
+	latencies             [][]time.Duration // Per CPU worker.
 }
 
 type Result struct {
 	PagesAllocated        uint64 // Only incremented; subtract pagesFreed to count leaks.
 	PagesFreed            uint64
-	NUMARemoteAllocations uint64 // Number of pages where page NID didn't match CPU's NID.
+	NUMARemoteAllocations uint64          // Number of pages where page NID didn't match CPU's NID.
+	Latencies             []time.Duration // Excludes userspace/syscall overhead. We only capture the last N allocations.
 }
 
 func (s *stats) String() string {
@@ -109,7 +113,10 @@ func (w *Workload) runCPU(ctx context.Context, cpu int) error {
 		if page.NID != w.cpuToNode[cpu] {
 			w.stats.numaRemoteAllocations.Add(1)
 		}
-
+		w.stats.latencies[cpu] = append(w.stats.latencies[cpu], page.Latency)
+		if len(w.stats.latencies) > 50000 {
+			w.stats.latencies = w.stats.latencies[1:]
+		}
 		pages = append(pages, page)
 
 		if int64(len(pages)) >= w.pagesPerCPU {
@@ -172,6 +179,7 @@ func (w *Workload) Run(ctx context.Context) (*Result, error) {
 		PagesAllocated:        w.stats.pagesAllocated.Load(),
 		PagesFreed:            w.stats.pagesFreed.Load(),
 		NUMARemoteAllocations: w.stats.numaRemoteAllocations.Load(),
+		Latencies:             slices.Concat(w.stats.latencies...),
 	}
 	return &r, nil
 }
@@ -209,8 +217,10 @@ func New(ctx context.Context, opts *Options) (*Workload, error) {
 	}
 
 	return &Workload{
-		kmod:               &kmod,
-		stats:              &stats{},
+		kmod: &kmod,
+		stats: &stats{
+			latencies: make([][]time.Duration, runtime.NumCPU()),
+		},
 		pagesPerCPU:        opts.TotalMemory.Pages() / int64(runtime.NumCPU()),
 		testDataPath:       opts.TestDataPath,
 		steadyStateReached: make(chan struct{}),
