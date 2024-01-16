@@ -46,7 +46,7 @@ func (k *Connection) AllocPage(order int) (Page, error) {
 	var ioctl C.struct_pab_ioctl_alloc_page
 	ioctl.args.order = C.int(order)
 	err := linux.Ioctl(k.File, C.pab_ioctl_alloc_page, uintptr(unsafe.Pointer(&ioctl)))
-	return Page(ioctl.result), err
+	return Page(ioctl.result.id), err
 }
 
 // FreePage frees a page.

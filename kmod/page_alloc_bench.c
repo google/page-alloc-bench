@@ -124,7 +124,8 @@ static long pab_ioctl(struct file *file, unsigned int cmd, unsigned long arg) {
 
 			alloced_pages_store(page, ioctl.args.order);
 
-			return put_user((unsigned long)page, &((struct pab_ioctl_alloc_page *)arg)->result);
+			return put_user((unsigned long)page,
+					&((struct pab_ioctl_alloc_page *)arg)->result.id);
 		}
 		case PAB_IOCTL_FREE_PAGE: {
 			struct page *page = (struct page *)arg;

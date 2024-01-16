@@ -25,7 +25,9 @@ struct pab_ioctl_alloc_page {
 	struct {
 		int order;
 	} args;
-	unsigned long result; /* Opaque ID */
+	struct {
+		unsigned long id; /* Opaque ID for the allocated page, used to free. */
+	} result;
 };
 #define PAB_IOCTL_ALLOC_PAGE	_IOWR(PAB_IOCTL_BASE, 1, struct pab_ioctl_alloc_page)
 
