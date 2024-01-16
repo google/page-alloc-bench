@@ -37,6 +37,8 @@ var (
 type Result struct {
 	IdleAvailableBytes        []int64 `json:"idle_available_bytes"`
 	AntagonizedAvailableBytes []int64 `json:"antagonized_available_bytes"`
+	KernelPageAllocs          int64   `json:"kernel_page_allocs"`
+	KernelPageAllocsRemote    int64   `json:"kernel_page_allocs_remote"`
 }
 
 // Runs findlimit workload @iterations times, appends result to @result.
@@ -80,12 +82,14 @@ func run(ctx context.Context) (*Result, error) {
 	eg, ctx := errgroup.WithContext(ctx)
 	eg.Go(func() error {
 		for {
-			err := kallocFree.Run(ctx)
-			if ctx.Err() != nil {
-				return nil
-			}
+			kallocfreeResult, err := kallocFree.Run(ctx)
 			if err != nil {
 				return err
+			}
+			result.KernelPageAllocs += int64(kallocfreeResult.PagesAllocated)
+			result.KernelPageAllocsRemote += int64(kallocfreeResult.NUMARemoteAllocations)
+			if ctx.Err() != nil {
+				return nil
 			}
 		}
 	})

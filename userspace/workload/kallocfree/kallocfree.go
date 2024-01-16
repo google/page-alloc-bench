@@ -38,8 +38,15 @@ type Options struct {
 }
 
 type stats struct {
-	pagesAllocated atomic.Uint64 // Only incremented; subtract pagesFreed to count leaks.
-	pagesFreed     atomic.Uint64
+	pagesAllocated        atomic.Uint64
+	pagesFreed            atomic.Uint64
+	numaRemoteAllocations atomic.Uint64
+}
+
+type Result struct {
+	PagesAllocated        uint64 // Only incremented; subtract pagesFreed to count leaks.
+	PagesFreed            uint64
+	NUMARemoteAllocations uint64 // Number of pages where page NID didn't match CPU's NID.
 }
 
 func (s *stats) String() string {
@@ -54,6 +61,7 @@ type Workload struct {
 	numThreads         int
 	steadyStateThreads atomic.Int32
 	steadyStateReached chan struct{} // Will be closed when stateStateThreads reaches numThreads
+	cpuToNode          map[int]int
 }
 
 // Run once on the system before each iteration of the workload.
@@ -76,8 +84,8 @@ var freeErrorLogged = false
 
 // per-CPU element of a workload. Assumes that the calling goroutine is already
 // pinned to an appropriate CPU.
-func (w *Workload) runCPU(ctx context.Context) error {
-	var pages []kmod.Page
+func (w *Workload) runCPU(ctx context.Context, cpu int) error {
+	var pages []*kmod.Page
 
 	defer func() {
 		for _, page := range pages {
@@ -98,6 +106,9 @@ func (w *Workload) runCPU(ctx context.Context) error {
 			return fmt.Errorf("allocating page: %v", err)
 		}
 		w.stats.pagesAllocated.Add(1)
+		if page.NID != w.cpuToNode[cpu] {
+			w.stats.numaRemoteAllocations.Add(1)
+		}
 
 		pages = append(pages, page)
 
@@ -121,7 +132,7 @@ func (w *Workload) runCPU(ctx context.Context) error {
 
 // Run runs the workload. This workload runs continuously until cancellation,
 // then returns nil. You may only call this merthod once.
-func (w *Workload) Run(ctx context.Context) error {
+func (w *Workload) Run(ctx context.Context) (*Result, error) {
 	defer w.kmod.Close()
 
 	fmt.Printf("Running global workload setup\n")
@@ -146,7 +157,7 @@ func (w *Workload) Run(ctx context.Context) error {
 				return fmt.Errorf("SchedSetaffinity(%+v): %c", cpuMask, err)
 			}
 
-			err = w.runCPU(ctx)
+			err = w.runCPU(ctx, cpu)
 			if err != nil {
 				return fmt.Errorf("workload failed on CPU %d: %v", cpu, err)
 			}
@@ -154,7 +165,15 @@ func (w *Workload) Run(ctx context.Context) error {
 		})
 	}
 
-	return eg.Wait()
+	if err := eg.Wait(); err != nil {
+		return nil, err
+	}
+	r := Result{
+		PagesAllocated:        w.stats.pagesAllocated.Load(),
+		PagesFreed:            w.stats.pagesFreed.Load(),
+		NUMARemoteAllocations: w.stats.numaRemoteAllocations.Load(),
+	}
+	return &r, nil
 }
 
 // AwaitSteadyState blocks until the workload can be expected to be allocating
@@ -173,6 +192,22 @@ func New(ctx context.Context, opts *Options) (*Workload, error) {
 	}
 	kmod := kmod.Connection{file}
 
+	nodes, err := linux.NUMANodes()
+	if err != nil {
+		return nil, fmt.Errorf("parsing NUMA nodes: %v", err)
+	}
+	cpuToNode := make(map[int]int)
+	for nid, mask := range nodes {
+		for _, cpu := range mask {
+			cpuToNode[int(cpu)] = nid
+		}
+	}
+	for cpu := 0; cpu < runtime.NumCPU(); cpu++ {
+		if _, ok := cpuToNode[cpu]; !ok {
+			return nil, fmt.Errorf("found no NUMA node for CPU %d (nodes: %+v)", cpu, nodes)
+		}
+	}
+
 	return &Workload{
 		kmod:               &kmod,
 		stats:              &stats{},
@@ -180,5 +215,6 @@ func New(ctx context.Context, opts *Options) (*Workload, error) {
 		testDataPath:       opts.TestDataPath,
 		steadyStateReached: make(chan struct{}),
 		numThreads:         runtime.NumCPU(),
+		cpuToNode:          cpuToNode,
 	}, nil
 }

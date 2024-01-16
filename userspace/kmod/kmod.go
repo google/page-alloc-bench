@@ -38,18 +38,25 @@ type Connection struct {
 	*os.File
 }
 
-// Page is an opaque ID for a page.
-type Page C.ulong
+// Page represents a page allocated by the kernel module.
+type Page struct {
+	NID int     // NUMA node ID
+	id  C.ulong // Opaque ID (spoiler: struct page *) used to free it.
+}
 
 // AllocPage allocates a page.
-func (k *Connection) AllocPage(order int) (Page, error) {
+func (k *Connection) AllocPage(order int) (*Page, error) {
 	var ioctl C.struct_pab_ioctl_alloc_page
 	ioctl.args.order = C.int(order)
 	err := linux.Ioctl(k.File, C.pab_ioctl_alloc_page, uintptr(unsafe.Pointer(&ioctl)))
-	return Page(ioctl.result.id), err
+	p := Page{
+		id:  ioctl.result.id,
+		NID: int(ioctl.result.nid),
+	}
+	return &p, err
 }
 
 // FreePage frees a page.
-func (k *Connection) FreePage(page Page) error {
-	return linux.Ioctl(k.File, C.pab_ioctl_free_page, uintptr(page))
+func (k *Connection) FreePage(page *Page) error {
+	return linux.Ioctl(k.File, C.pab_ioctl_free_page, uintptr(page.id))
 }

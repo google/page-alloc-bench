@@ -49,3 +49,7 @@ there as JSON. This currently only has one field:
 - `antagonized_available_bytes`: This is like `idle_available_bytes`, but it's
   measured while an antagonistic kernel allocation workload runs in the
   background.
+- `kernel_page_allocs`: Total number of pages the antagonistic kernel workers
+  could allocate
+- `kernel_page_allocs_remote`: Of the above, the number of pages that came from
+  a remote NUMA node.
