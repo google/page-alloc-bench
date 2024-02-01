@@ -33,4 +33,4 @@ struct pab_ioctl_alloc_page {
 };
 #define PAB_IOCTL_ALLOC_PAGE	_IOWR(PAB_IOCTL_BASE, 1, struct pab_ioctl_alloc_page)
 
-#define PAB_IOCTL_FREE_PAGE 	_IOR(PAB_IOCTL_BASE, 2, struct page *)
+#define PAB_IOCTL_FREE_PAGE	_IOR(PAB_IOCTL_BASE, 2, struct page *)

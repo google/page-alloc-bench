@@ -109,15 +109,17 @@ static void alloced_pages_free_all(void)
 	}
 }
 
-static long pab_ioctl(struct file *file, unsigned int cmd, unsigned long arg) {
-	switch (cmd) {
+static long pab_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
+{
+		switch (cmd) {
 		case PAB_IOCTL_ALLOC_PAGE: {
 			struct pab_ioctl_alloc_page ioctl;
 			struct page *page;
 			int err;
 			ktime_t start;
 
-			err = copy_from_user(&ioctl, (void *)arg, sizeof(struct pab_ioctl_alloc_page));
+			err = copy_from_user(&ioctl, (void *)arg,
+					     sizeof(struct pab_ioctl_alloc_page));
 			if (err)
 				return err;
 
@@ -132,7 +134,7 @@ static long pab_ioctl(struct file *file, unsigned int cmd, unsigned long arg) {
 			ioctl.result.id = (unsigned long)page;
 			ioctl.result.nid = page_to_nid(page);
 			return copy_to_user(&((struct pab_ioctl_alloc_page *)arg)->result,
-					    &ioctl.result, sizeof(ioctl.result));
+					&ioctl.result, sizeof(ioctl.result));
 		}
 		case PAB_IOCTL_FREE_PAGE: {
 			struct page *page = (struct page *)arg;
