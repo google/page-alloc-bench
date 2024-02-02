@@ -63,10 +63,10 @@ static struct alloced_page *alloced_page_get(struct page *page)
 }
 
 
-static void alloced_pages_store(struct page *page, int order)
+static void alloced_page_store(struct page *page, int order)
 {
 	struct alloced_pages *aps;
-	struct alloced_page *ap = (struct alloced_page *)page_to_virt(page);
+	struct alloced_page *ap = alloced_page_get(page);
 
 	ap->order = order;
 
@@ -129,12 +129,12 @@ static long pab_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 				return -ENOMEM;
 			ioctl.result.latency_ns = ktime_to_ns(ktime_sub(ktime_get(), start));
 
-			alloced_pages_store(page, ioctl.args.order);
+			alloced_page_store(page, ioctl.args.order);
 
 			ioctl.result.id = (unsigned long)page;
 			ioctl.result.nid = page_to_nid(page);
 			return copy_to_user(&((struct pab_ioctl_alloc_page *)arg)->result,
-					&ioctl.result, sizeof(ioctl.result));
+					    &ioctl.result, sizeof(ioctl.result));
 		}
 		case PAB_IOCTL_FREE_PAGE: {
 			struct page *page = (struct page *)arg;
