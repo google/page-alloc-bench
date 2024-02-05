@@ -113,9 +113,10 @@ func (w *Workload) runCPU(ctx context.Context, cpu int) error {
 		if page.NID != w.cpuToNode[cpu] {
 			w.stats.numaRemoteAllocations.Add(1)
 		}
-		w.stats.latencies[cpu] = append(w.stats.latencies[cpu], page.Latency)
-		if len(w.stats.latencies) > 50000 {
-			w.stats.latencies = w.stats.latencies[1:]
+		l := &w.stats.latencies[cpu]
+		*l = append(*l, page.Latency)
+		if len(*l) > 50000 {
+			*l = (*l)[1:]
 		}
 		pages = append(pages, page)
 
