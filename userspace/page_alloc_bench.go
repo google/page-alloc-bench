@@ -129,9 +129,6 @@ func doMain() error {
 	}
 
 	if *outputPathFlag != "" {
-		if result == nil {
-			return fmt.Errorf("this workload doesn't support --outputpath")
-		}
 		return writeOutput(*outputPathFlag, result)
 	}
 	return nil
