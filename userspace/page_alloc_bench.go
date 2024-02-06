@@ -116,12 +116,16 @@ func printAverages(name string, vals []int64) {
 	}
 	sum := int64(0)
 	max := int64(math.MinInt64)
+	min := int64(math.MaxInt64)
 	// Hack: we happen to know the biggest numbers we're using here
 	// are nanosecond latencies. It ought to be impossible to
 	// overflow here so we dont bother doing fancy maths.
 	for _, val := range vals {
 		if val > max {
 			max = val
+		}
+		if val < min {
+			min = val
 		}
 		sum += val
 	}
@@ -131,8 +135,8 @@ func printAverages(name string, vals []int64) {
 	mean := float64(sum) / float64(len(vals))
 	median := sorted[len(sorted)/2]
 	p95 := sorted[(len(sorted)*95)/100]
-	fmt.Printf("%q:\n\tsamples: %d\n\tmean: %12.02f\n\tmed: %12d\n\tp95: %12d\n\tmax: %12d\n",
-		name, len(vals), mean, median, p95, max)
+	fmt.Printf("%q:\n\tsamples: %d\n\tmean: %12.02f\n\tmed: %12d\n\tp95: %12d\n\tmax: %12d\n\tmin: %12d\n",
+		name, len(vals), mean, median, p95, max, min)
 }
 
 func writeOutput(path string, result *Result) error {
