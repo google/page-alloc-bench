@@ -21,6 +21,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"math/rand"
 	"os"
 	"runtime"
 	"slices"
@@ -102,32 +103,44 @@ func (w *Workload) runCPU(ctx context.Context, cpu int) error {
 		}
 	}()
 
+	// Give each CPU its own pattern of behaviour, but keep the pattern
+	// stable between runs (at least for the same build)..
+	random := rand.New(rand.NewSource(int64(cpu)))
 	steady := false
 
 	for ctx.Err() == nil {
-		page, err := w.kmod.AllocPage(0)
-		if err != nil {
-			return fmt.Errorf("allocating page: %v", err)
+		// Pattern is to allocate and free in alternate bursts while
+		// keeping the overall number of allocated pages bouncing around
+		// a roughly stable "middle" value.
+		middle := 50000
+		var target int
+		if random.Uint32()%2 == 0 {
+			target = middle + (int(random.Uint64() % 1000))
+		} else {
+			target = middle - (int(random.Uint64() % 1000))
 		}
-		w.stats.pagesAllocated.Add(1)
-		if page.NID != w.cpuToNode[cpu] {
-			w.stats.numaRemoteAllocations.Add(1)
-		}
-		l := &w.stats.latencies[cpu]
-		*l = append(*l, page.Latency)
-		if len(*l) > 50000 {
-			*l = (*l)[1:]
-		}
-		pages = append(pages, page)
 
-		if int64(len(pages)) >= w.pagesPerCPU {
-			if !steady {
+		// Allocate up to target.
+		for len(pages) < target {
+			page, err := w.allocPageOnCPU(0, cpu)
+			if err != nil {
+				return err
+			}
+			pages = append(pages, page)
+
+			// We are steady once we hit the middle at least once.
+			// Note it might take a few iterations before we hit
+			// this point, that's fine.
+			if len(pages) == middle && !steady {
 				if w.steadyStateThreads.Add(1) >= int32(w.numThreads) {
 					close(w.steadyStateReached)
 				}
 				steady = true
 			}
+		}
 
+		// Free down to target.
+		for len(pages) > target {
 			if err := w.kmod.FreePage(pages[0]); err != nil {
 				return fmt.Errorf("freeing page: %v\n", err)
 			}
@@ -136,6 +149,24 @@ func (w *Workload) runCPU(ctx context.Context, cpu int) error {
 	}
 
 	return nil
+}
+
+// Allocate a page, update stats. Caller must be running on the stated CPU.
+func (w *Workload) allocPageOnCPU(order int, cpu int) (*kmod.Page, error) {
+	page, err := w.kmod.AllocPage(order)
+	if err != nil {
+		return nil, fmt.Errorf("allocating page: %v", err)
+	}
+	w.stats.pagesAllocated.Add(1)
+	if page.NID != w.cpuToNode[cpu] {
+		w.stats.numaRemoteAllocations.Add(1)
+	}
+	l := &w.stats.latencies[cpu]
+	*l = append(*l, page.Latency)
+	if len(*l) > 50000 {
+		*l = (*l)[1:]
+	}
+	return page, nil
 }
 
 // Run runs the workload. This workload runs continuously until cancellation,
