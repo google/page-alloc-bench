@@ -148,9 +148,6 @@ func (w *Workload) Run(ctx context.Context) (*Result, error) {
 
 	fmt.Printf("Started %d threads, each allocating %d pages\n", runtime.NumCPU(), w.pagesPerCPU)
 
-	// The WaitGroup + errCh is a poor-man's sync.ErrGroup, that isn't in
-	// the proper stdlib yet, and it doesn't seem worth throwing away the
-	// no-Go-dependencies thing for that.
 	eg, ctx := errgroup.WithContext(ctx)
 	for cpu := 0; cpu < w.numThreads; cpu++ {
 		eg.Go(func() error {
