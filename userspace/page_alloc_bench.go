@@ -19,7 +19,9 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"math"
 	"os"
+	"slices"
 	"time"
 
 	"github.com/google/page_alloc_bench/pab"
@@ -107,6 +109,32 @@ func run(ctx context.Context) (*Result, error) {
 	return &result, eg.Wait()
 }
 
+func printAverages(name string, vals []int64) {
+	if len(vals) == 0 {
+		fmt.Printf("No values for metric %q\n", name)
+		return
+	}
+	sum := int64(0)
+	max := int64(math.MinInt64)
+	// Hack: we happen to know the biggest numbers we're using here
+	// are nanosecond latencies. It ought to be impossible to
+	// overflow here so we dont bother doing fancy maths.
+	for _, val := range vals {
+		if val > max {
+			max = val
+		}
+		sum += val
+	}
+
+	sorted := slices.Clone(vals)
+	slices.Sort(sorted)
+	mean := float64(sum) / float64(len(vals))
+	median := sorted[len(sorted)/2]
+	p95 := sorted[(len(sorted)*95)/100]
+	fmt.Printf("%q:\n\tsamples: %d\n\tmean: %12.02f\n\tmed: %12d\n\tp95: %12d\n\tmax: %12d\n",
+		name, len(vals), mean, median, p95, max)
+}
+
 func writeOutput(path string, result *Result) error {
 	output, err := json.Marshal(result)
 	if err != nil {
@@ -127,6 +155,10 @@ func doMain() error {
 	if err != nil {
 		return err
 	}
+
+	printAverages("idle_available_bytes", result.IdleAvailableBytes)
+	printAverages("antagonized_available_bytes", result.AntagonizedAvailableBytes)
+	printAverages("kernel_page_alloc_latencies_ns", result.KernelPageAllocLatenciesNS)
 
 	if *outputPathFlag != "" {
 		return writeOutput(*outputPathFlag, result)
