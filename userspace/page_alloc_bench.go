@@ -36,33 +36,36 @@ var (
 	iterationsFlag = flag.Int("iterations", 5, "Iterations")
 )
 
-type Result struct {
-	IdleAvailableBytes         []int64 `json:"idle_available_bytes"`
-	AntagonizedAvailableBytes  []int64 `json:"antagonized_available_bytes"`
-	KernelPageAllocs           int64   `json:"kernel_page_allocs"`
-	KernelPageAllocsRemote     int64   `json:"kernel_page_allocs_remote"`
-	KernelPageAllocLatenciesNS []int64 `json:"kernel_page_alloc_latencies_ns"`
-}
+var (
+	idleAvailableBytesPrefix         = "idle_available_bytes"
+	antagonizedAvailableBytesPrefix  = "antagonized_available_bytes"
+	kernelPageAllocsPrefix           = "kernel_page_allocs"
+	kernelPageAllocsRemotePrefix     = "kernel_page_allocs_remote"
+	kernelPageAllocLatenciesNSPrefix = "kernel_page_alloc_latencies_ns"
+)
 
-// Runs findlimit workload @iterations times, appends result to @result.
-func repeatFindlimit(ctx context.Context, iterations int, result *[]int64, desc string) error {
+// Runs findlimit workload @iterations times, returns available byte counts.
+func repeatFindlimit(ctx context.Context, iterations int, desc string) ([]int64, error) {
+	var result []int64
 	for i := 1; i <= iterations; i++ {
 		if ctx.Err() != nil {
-			return nil
+			return nil, nil
 		}
 		findlimitResult, err := findlimit.Run(ctx, &findlimit.Options{})
 		if err != nil {
-			return fmt.Errorf("%s findlimit run %d: %v\n", desc, i, err)
+			return nil, fmt.Errorf("%s findlimit run %d: %v\n", desc, i, err)
 		}
 		fmt.Printf("\tIteration %d/%d: %s available on %s system\n",
 			i, *iterationsFlag, findlimitResult.Allocated, desc)
-		*result = append(*result, findlimitResult.Allocated.Bytes())
+		result = append(result, findlimitResult.Allocated.Bytes())
 	}
-	return nil
+	return result, nil
 }
 
-func run(ctx context.Context) (*Result, error) {
-	var result Result
+// Returns map of metric names to values. Metrics with a single value are just a
+// slice with only one item.
+func run(ctx context.Context) (map[string][]int64, error) {
+	result := make(map[string][]int64)
 
 	// We're not running this just yet, btu set it upt now to fail fast.
 	kernelUsage := 128 * pab.Megabyte
@@ -75,9 +78,11 @@ func run(ctx context.Context) (*Result, error) {
 
 	// Figure out how much memory the system appears to have when idle.
 	fmt.Printf("Assessing system memory availability...\n")
-	if err := repeatFindlimit(ctx, *iterationsFlag, &result.IdleAvailableBytes, "initial"); err != nil {
+	idleAvailableBytes, err := repeatFindlimit(ctx, *iterationsFlag, "initial")
+	if err != nil {
 		return nil, err
 	}
+	result[idleAvailableBytesPrefix] = idleAvailableBytes
 
 	// Make the system busy with lots of background kernel allocations and frees.
 	ctx, cancel := context.WithCancel(ctx)
@@ -88,11 +93,13 @@ func run(ctx context.Context) (*Result, error) {
 		if err != nil {
 			return err
 		}
-		result.KernelPageAllocs += int64(kallocfreeResult.PagesAllocated)
-		result.KernelPageAllocsRemote += int64(kallocfreeResult.NUMARemoteAllocations)
+		result[kernelPageAllocsPrefix] = []int64{int64(kallocfreeResult.PagesAllocated)}
+		result[kernelPageAllocsRemotePrefix] = []int64{int64(kallocfreeResult.NUMARemoteAllocations)}
+		var ls []int64
 		for _, l := range kallocfreeResult.Latencies {
-			result.KernelPageAllocLatenciesNS = append(result.KernelPageAllocLatenciesNS, l.Nanoseconds())
+			ls = append(ls, l.Nanoseconds())
 		}
+		result[kernelPageAllocLatenciesNSPrefix] = ls
 		return nil
 	})
 	fmt.Printf("Waiting for kallocfree to reach steady state...\n")
@@ -100,13 +107,15 @@ func run(ctx context.Context) (*Result, error) {
 	fmt.Printf("...Steady state reached.\n")
 	eg.Go(func() error {
 		// See how much memory seems to be in the system now.
-		if err := repeatFindlimit(ctx, *iterationsFlag, &result.AntagonizedAvailableBytes, "antagonized"); err != nil {
+		antagonizedAvailableBytes, err := repeatFindlimit(ctx, *iterationsFlag, "antagonized")
+		if err != nil {
 			return err
 		}
+		result[antagonizedAvailableBytesPrefix] = antagonizedAvailableBytes
 		cancel() // Done.
 		return nil
 	})
-	return &result, eg.Wait()
+	return result, eg.Wait()
 }
 
 func printAverages(name string, vals []int64) {
@@ -139,7 +148,7 @@ func printAverages(name string, vals []int64) {
 		name, len(vals), mean, median, p95, max, min)
 }
 
-func writeOutput(path string, result *Result) error {
+func writeOutput(path string, result map[string][]int64) error {
 	output, err := json.Marshal(result)
 	if err != nil {
 		return fmt.Errorf("marshalling JSON output: %v\n", err)
@@ -160,9 +169,9 @@ func doMain() error {
 		return err
 	}
 
-	printAverages("idle_available_bytes", result.IdleAvailableBytes)
-	printAverages("antagonized_available_bytes", result.AntagonizedAvailableBytes)
-	printAverages("kernel_page_alloc_latencies_ns", result.KernelPageAllocLatenciesNS)
+	printAverages(idleAvailableBytesPrefix, result[idleAvailableBytesPrefix])
+	printAverages(antagonizedAvailableBytesPrefix, result[antagonizedAvailableBytesPrefix])
+	printAverages(kernelPageAllocLatenciesNSPrefix, result[kernelPageAllocLatenciesNSPrefix])
 
 	if *outputPathFlag != "" {
 		return writeOutput(*outputPathFlag, result)
