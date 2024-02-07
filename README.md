@@ -56,3 +56,9 @@ there as JSON. This currently only has one field:
 - `kernel_page_alloc_latencies_ns`: Sample of latencies for the kernel
   allocation call. This is just the last N samples, no proper sampling logic is
   implemented.
+
+If you set `--alloc-orders` to contain multiple values (this is the default),
+the benchmark is repeated for each of the listed orders. The order is used as
+the argument to alloc_pages in the kernel-allocation aspect of the workload
+(i.e. we allocate pages of size 2^order), but doesn't influence the userspace
+allocation part.

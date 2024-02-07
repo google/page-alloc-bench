@@ -22,6 +22,8 @@ import (
 	"math"
 	"os"
 	"slices"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/google/page_alloc_bench/pab"
@@ -31,9 +33,10 @@ import (
 )
 
 var (
-	timeoutSFlag   = flag.Int("timeout-s", 0, "Timeout in seconds. Set 0 for no timeout (default)")
-	outputPathFlag = flag.String("output-path", "", "File to write JSON results to. See README for specification.")
-	iterationsFlag = flag.Int("iterations", 5, "Iterations")
+	timeoutSFlag    = flag.Int("timeout-s", 0, "Timeout in seconds. Set 0 for no timeout (default)")
+	outputPathFlag  = flag.String("output-path", "", "File to write JSON results to. See README for specification.")
+	iterationsFlag  = flag.Int("iterations", 5, "Iterations")
+	allocOrdersFlag = flag.String("alloc-orders", "0,4", "Comma-separate list of page alloc orders to test")
 )
 
 var (
@@ -64,13 +67,14 @@ func repeatFindlimit(ctx context.Context, iterations int, desc string) ([]int64,
 
 // Returns map of metric names to values. Metrics with a single value are just a
 // slice with only one item.
-func run(ctx context.Context) (map[string][]int64, error) {
+func run(ctx context.Context, allocOrder int) (map[string][]int64, error) {
 	result := make(map[string][]int64)
 
 	// We're not running this just yet, btu set it upt now to fail fast.
 	kernelUsage := 128 * pab.Megabyte
 	kallocFree, err := kallocfree.New(ctx, &kallocfree.Options{
 		TotalMemory: kernelUsage,
+		Order:       allocOrder,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("setting up kallocfree workload: %v\n", err)
@@ -164,14 +168,36 @@ func doMain() error {
 		defer cancel()
 	}
 
-	result, err := run(ctx)
-	if err != nil {
-		return err
+	orderStrs := strings.Split(*allocOrdersFlag, ",")
+	if len(orderStrs) == 0 {
+		return fmt.Errorf("--alloc-orders empty?")
+	}
+	var orders []int
+	for _, orderStr := range orderStrs {
+		o, err := strconv.Atoi(orderStr)
+		if err != nil {
+			return fmt.Errorf("Bad value %q in --alloc-orders: %v", orderStr, err)
+		}
+		orders = append(orders, o)
 	}
 
-	printAverages(idleAvailableBytesPrefix, result[idleAvailableBytesPrefix])
-	printAverages(antagonizedAvailableBytesPrefix, result[antagonizedAvailableBytesPrefix])
-	printAverages(kernelPageAllocLatenciesNSPrefix, result[kernelPageAllocLatenciesNSPrefix])
+	result := make(map[string][]int64)
+	for _, order := range orders {
+		orderResult, err := run(ctx, order)
+		if err != nil {
+			return err
+		}
+
+		for key, val := range orderResult {
+			result[fmt.Sprintf("%s_order%d", key, order)] = val
+		}
+	}
+
+	for key, val := range result {
+		if len(val) > 1 {
+			printAverages(key, val)
+		}
+	}
 
 	if *outputPathFlag != "" {
 		return writeOutput(*outputPathFlag, result)

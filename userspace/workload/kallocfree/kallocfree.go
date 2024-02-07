@@ -38,6 +38,7 @@ type Options struct {
 	// See corresponding cmdline flags for explanation of fields.
 	TotalMemory  pab.ByteSize
 	TestDataPath string
+	Order        int // Allocation order (i.e. alloc_pages arg).
 }
 
 type stats struct {
@@ -67,6 +68,7 @@ type Workload struct {
 	steadyStateThreads atomic.Int32
 	steadyStateReached chan struct{} // Will be closed when stateStateThreads reaches numThreads
 	cpuToNode          map[int]int
+	order              int
 }
 
 // Run once on the system before each iteration of the workload.
@@ -122,7 +124,7 @@ func (w *Workload) runCPU(ctx context.Context, cpu int) error {
 
 		// Allocate up to target.
 		for len(pages) < target {
-			page, err := w.allocPageOnCPU(0, cpu)
+			page, err := w.allocPageOnCPU(w.order, cpu)
 			if err != nil {
 				return err
 			}
@@ -255,5 +257,6 @@ func New(ctx context.Context, opts *Options) (*Workload, error) {
 		steadyStateReached: make(chan struct{}),
 		numThreads:         runtime.NumCPU(),
 		cpuToNode:          cpuToNode,
+		order:              opts.Order,
 	}, nil
 }
