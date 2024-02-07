@@ -152,6 +152,29 @@ func printAverages(name string, vals []int64) {
 		name, len(vals), mean, median, p95, max, min)
 }
 
+func printResult(result map[string][]int64) {
+	// Print in order sorted by last character, so that all _orderN
+	// metrics for same N get printed together.
+	keys := []string{}
+	for key, _ := range result {
+		keys = append(keys, key)
+	}
+	slices.SortFunc(keys, func(k1, k2 string) int {
+		// Careful - indexing a string gives you a byte which is
+		// unsigned. Need to convert to int _before_ subtracting.
+		return int(k1[len(k1)-1]) - int(k2[len(k2)-1])
+	})
+
+	for _, key := range keys {
+		val := result[key]
+		if len(val) > 1 {
+			printAverages(key, val)
+		} else {
+			fmt.Printf("%q: %v\n", key, val[0])
+		}
+	}
+}
+
 func writeOutput(path string, result map[string][]int64) error {
 	output, err := json.Marshal(result)
 	if err != nil {
@@ -193,11 +216,7 @@ func doMain() error {
 		}
 	}
 
-	for key, val := range result {
-		if len(val) > 1 {
-			printAverages(key, val)
-		}
-	}
+	printResult(result)
 
 	if *outputPathFlag != "" {
 		return writeOutput(*outputPathFlag, result)
