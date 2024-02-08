@@ -51,6 +51,11 @@ there as JSON. This currently only has one field:
   background.
 - `kernel_page_allocs`: Total number of pages the antagonistic kernel workers
   could allocate
+- `kernel_alloc_failures`: Number of times the kernel workers failed to allocate
+  a page. Allocations are performed with expontential backoff so it's likely the
+  only relevant aspect of this metric is whether it's zero or nonzero. If
+  nonzero, perhaps something is wrong and the other metrics should be eyed with
+  suspicion.
 - `kernel_page_allocs_remote`: Of the above, the number of pages that came from
   a remote NUMA node.
 - `kernel_page_alloc_latencies_ns`: Sample of latencies for the kernel

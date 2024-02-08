@@ -93,7 +93,7 @@ func SchedSetaffinity(pid int, mask CPUMask) error {
 func Ioctl(file *os.File, cmd, arg uintptr) error {
 	_, _, err := syscall.Syscall(syscall.SYS_IOCTL, file.Fd(), cmd, arg)
 	if err != 0 {
-		return fmt.Errorf("ioctl 0x%x 0x%x on %s: %v\n", cmd, arg, file.Name(), err)
+		return fmt.Errorf("ioctl 0x%x 0x%x on %s: %w\n", cmd, arg, file.Name(), err)
 	}
 	return nil
 }

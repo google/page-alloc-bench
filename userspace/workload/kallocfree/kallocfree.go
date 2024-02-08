@@ -19,6 +19,7 @@ package kallocfree
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"math/rand"
@@ -26,6 +27,7 @@ import (
 	"runtime"
 	"slices"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	"github.com/google/page_alloc_bench/kmod"
@@ -44,11 +46,13 @@ type Options struct {
 type stats struct {
 	pagesAllocated        atomic.Uint64
 	pagesFreed            atomic.Uint64
+	allocFailures         atomic.Uint64
 	numaRemoteAllocations atomic.Uint64
 	latencies             [][]time.Duration // Per CPU worker.
 }
 
 type Result struct {
+	AllocFailures         uint64
 	PagesAllocated        uint64 // Only incremented; subtract pagesFreed to count leaks.
 	PagesFreed            uint64
 	NUMARemoteAllocations uint64          // Number of pages where page NID didn't match CPU's NID.
@@ -124,7 +128,7 @@ func (w *Workload) runCPU(ctx context.Context, cpu int) error {
 
 		// Allocate up to target.
 		for len(pages) < target {
-			page, err := w.allocPageOnCPU(w.order, cpu)
+			page, err := w.allocPageOnCPU(ctx, w.order, cpu)
 			if err != nil {
 				return err
 			}
@@ -154,11 +158,29 @@ func (w *Workload) runCPU(ctx context.Context, cpu int) error {
 }
 
 // Allocate a page, update stats. Caller must be running on the stated CPU.
-func (w *Workload) allocPageOnCPU(order int, cpu int) (*kmod.Page, error) {
-	page, err := w.kmod.AllocPage(order)
+func (w *Workload) allocPageOnCPU(ctx context.Context, order int, cpu int) (*kmod.Page, error) {
+	// Exponential backoff in case of allocation failures.
+	backoff := 500 * time.Millisecond
+	var page *kmod.Page
+	var err error
+	for {
+		page, err = w.kmod.AllocPage(order)
+		if errors.Is(err, syscall.ENOMEM) {
+			w.stats.allocFailures.Add(1)
+			select {
+			case <-time.After(backoff):
+				backoff += backoff / 2
+				continue
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+		}
+		break
+	}
 	if err != nil {
 		return nil, fmt.Errorf("allocating page: %v", err)
 	}
+
 	w.stats.pagesAllocated.Add(1)
 	if page.NID != w.cpuToNode[cpu] {
 		w.stats.numaRemoteAllocations.Add(1)
@@ -207,6 +229,7 @@ func (w *Workload) Run(ctx context.Context) (*Result, error) {
 		return nil, err
 	}
 	r := Result{
+		AllocFailures:         w.stats.allocFailures.Load(),
 		PagesAllocated:        w.stats.pagesAllocated.Load(),
 		PagesFreed:            w.stats.pagesFreed.Load(),
 		NUMARemoteAllocations: w.stats.numaRemoteAllocations.Load(),

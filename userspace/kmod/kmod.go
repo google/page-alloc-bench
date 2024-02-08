@@ -46,7 +46,8 @@ type Page struct {
 	id      C.ulong       // Opaque ID (spoiler: struct page *) used to free it.
 }
 
-// AllocPage allocates a page.
+// AllocPage allocates a page. Returned errors will wrap a syscall.Errno where
+// possible.
 func (k *Connection) AllocPage(order int) (*Page, error) {
 	var ioctl C.struct_pab_ioctl_alloc_page
 	ioctl.args.order = C.int(order)

@@ -40,6 +40,7 @@ var (
 )
 
 var (
+	kernelAllocFailuresPrefix        = "kernel_alloc_failures"
 	idleAvailableBytesPrefix         = "idle_available_bytes"
 	antagonizedAvailableBytesPrefix  = "antagonized_available_bytes"
 	kernelPageAllocsPrefix           = "kernel_page_allocs"
@@ -97,6 +98,7 @@ func run(ctx context.Context, allocOrder int) (map[string][]int64, error) {
 		if err != nil {
 			return err
 		}
+		result[kernelAllocFailuresPrefix] = []int64{int64(kallocfreeResult.AllocFailures)}
 		result[kernelPageAllocsPrefix] = []int64{int64(kallocfreeResult.PagesAllocated)}
 		result[kernelPageAllocsRemotePrefix] = []int64{int64(kallocfreeResult.NUMARemoteAllocations)}
 		var ls []int64
