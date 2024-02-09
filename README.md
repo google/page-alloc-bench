@@ -39,7 +39,7 @@ can also just copy all the relevant files manually and run `run.sh` directly.
 # Output
 
 You can pass `--output-path`, data measured by the workload will be written
-there as JSON. This currently only has one field:
+there as JSON. Fields are:
 
 - `idle_available_bytes`: This workload attempts to allocate as much memory as
   possible from userspace. It then does this again while simultaneously
@@ -66,7 +66,7 @@ If you set `--alloc-orders` to contain multiple values (this is the default),
 the benchmark is repeated for each of the listed orders. The order is used as
 the argument to alloc_pages in the kernel-allocation aspect of the workload
 (i.e. we allocate pages of size 2^order), but doesn't influence the userspace
-allocation part.
+allocation part. When you do this, metric names are suffied with `_order$n`.
 
 ---
 
