@@ -1,3 +1,10 @@
+A benchmark for the Linux kernel's page allocator.
+
+This was written to test some pretty specific performance concerns with changes
+we're developing to the allocator. However it could be generally useful for
+testing. The best way to understand what it does is to read the description of
+its output.
+
 # tl;dr
 
 ```sh
