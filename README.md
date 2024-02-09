@@ -67,3 +67,7 @@ the benchmark is repeated for each of the listed orders. The order is used as
 the argument to alloc_pages in the kernel-allocation aspect of the workload
 (i.e. we allocate pages of size 2^order), but doesn't influence the userspace
 allocation part.
+
+---
+
+This is not an officially supported Google product.
