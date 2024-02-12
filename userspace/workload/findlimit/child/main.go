@@ -23,7 +23,6 @@ import (
 	"flag"
 	"fmt"
 	"log"
-	"math/bits"
 	"os"
 	"runtime"
 	"sync"
@@ -38,10 +37,10 @@ var (
 	allocSize     = flag.Int("alloc-size", 0, "Size of subsequent individual allocs.")
 )
 
-func mmap(size int) ([]byte, error) {
+func mmap(size pab.ByteSize) ([]byte, error) {
 	prot := syscall.PROT_READ | syscall.PROT_WRITE
 	flags := syscall.MAP_PRIVATE | syscall.MAP_ANONYMOUS
-	return syscall.Mmap(-1, 0, size, prot, flags)
+	return syscall.Mmap(-1, 0, int(size.Bytes()), prot, flags)
 }
 
 func doMain() error {
@@ -68,30 +67,34 @@ func doMain() error {
 		}
 	}()
 
+	// Make this bigger to reduce the number of syscalls and speed the benchmark
+	// up. Make it smaller to make the benchmark work on teeny weeny leedle
+	// computers. The code below assumes it's a multiple of the page size.
+	chunkSize := 32 * pab.Megabyte
+	mmapSize := chunkSize.Mul(runtime.NumCPU())
+	pageSize := int64(os.Getpagesize()) // This is a syscall so just do it once.
+
 	for {
-		// Make this bigger to reduce the number of syscalls and speed the benchmark
-		// up. Make it smaller to make the benchmark work on teeny weeny leedle
-		// computers. The code below assumes it's a multiple of the page size.
-		const mmapSize = 8 * pab.Gigabyte
-		data, err := mmap(int(mmapSize.Bytes()))
+		data, err := mmap(mmapSize)
 		if err != nil {
 			log.Fatalf("mmap(%s) failed. Computer too teeny? /proc/sys/vm/overcommit_memory set to 2? %v",
 				mmapSize, err)
 		}
 
-		// Touch pages to actually fault them into memory, this is where the
-		// real allocation happens. We'll do this in parallel for speed. We
-		// divide the mmaped region into equally sized chunks and run a
-		// goroutine per chunk, to make them equally sized we just divide them
-		// into a power of two. I can't do maths with other numbers sorry.
-		goros := 1 << (63 - bits.LeadingZeros64(uint64(runtime.NumCPU())))
-		chunkSize := mmapSize.Bytes() / int64(goros)
-		pageSize := int64(os.Getpagesize()) // This is a syscall so just do it once.
+		// Touch pages to actually fault them into memory, this is where
+		// the real allocation happens. We'll do this in parallel for
+		// speed and pin to each CPU to reduce variability from
+		// scheduler behaviour.
 		var wg sync.WaitGroup
-		for chunkStart := int64(0); chunkStart < mmapSize.Bytes(); chunkStart += chunkSize {
+		for cpu := 0; cpu < runtime.NumCPU(); cpu++ {
 			wg.Add(1)
+			cpu := cpu
 			go func() {
-				for offset := int64(0); offset < chunkSize; offset += pageSize {
+				if err := pab.LockGoroutineToCPU(cpu); err != nil {
+					log.Fatalf("Pinning goroutine to CPU failed: %v", err)
+				}
+				chunkStart := chunkSize.Bytes() * int64(cpu)
+				for offset := int64(0); offset < chunkSize.Bytes(); offset += pageSize {
 					data[chunkStart+offset] = 0
 					allocedBytes.Add(int64(pageSize))
 				}

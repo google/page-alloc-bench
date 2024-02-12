@@ -19,6 +19,9 @@ package pab
 import (
 	"fmt"
 	"os"
+	"runtime"
+
+	"github.com/google/page_alloc_bench/linux"
 )
 
 const (
@@ -52,4 +55,25 @@ func (s ByteSize) String() string {
 	default:
 		return fmt.Sprintf("%.2fGiB", float64(s)/float64(Gigabyte))
 	}
+}
+
+func (s ByteSize) Mul(x int) ByteSize {
+	return ByteSize(int64(x) * int64(s))
+}
+
+// Lock the calling goroutine to the current CPU. Child goroutines are
+// unaffected.
+func LockGoroutineToCPU(cpu int) error {
+	// This means that the goroutine gets the thread to itself and never
+	// migrates to another thread. Basically the goroutine "is a thread"
+	// now.
+	runtime.LockOSThread()
+
+	cpuMask := linux.NewCPUMask(cpu)
+	err := linux.SchedSetaffinity(linux.PIDCallingThread, cpuMask)
+	if err != nil {
+		return fmt.Errorf("SchedSetaffinity(%+v): %c", cpuMask, err)
+	}
+
+	return nil
 }

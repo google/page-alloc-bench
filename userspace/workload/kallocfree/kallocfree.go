@@ -206,18 +206,11 @@ func (w *Workload) Run(ctx context.Context) (*Result, error) {
 	eg, ctx := errgroup.WithContext(ctx)
 	for cpu := 0; cpu < w.numThreads; cpu++ {
 		eg.Go(func() error {
-			// This means that the goroutine gets the thread to
-			// itself and the thread never gets migrated between
-			// goroutines. IOW the goroutine "is a thread".
-			runtime.LockOSThread()
-
-			cpuMask := linux.NewCPUMask(cpu)
-			err := linux.SchedSetaffinity(linux.PIDCallingThread, cpuMask)
-			if err != nil {
-				return fmt.Errorf("SchedSetaffinity(%+v): %c", cpuMask, err)
+			if err := pab.LockGoroutineToCPU(cpu); err != nil {
+				return err
 			}
 
-			err = w.runCPU(ctx, cpu)
+			err := w.runCPU(ctx, cpu)
 			if err != nil {
 				return fmt.Errorf("workload failed on CPU %d: %v", cpu, err)
 			}
