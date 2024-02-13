@@ -81,7 +81,7 @@ static void alloced_page_store(struct page *page, int order)
 	put_cpu();
 }
 
-static void alloced_page_forget(struct alloced_page *ap)
+static void alloced_page_remove(struct alloced_page *ap)
 {
 	spin_lock(&ap->aps->lock);
 	list_del(&ap->node);
@@ -140,7 +140,7 @@ static long pab_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 			struct page *page = (struct page *)arg;
 			struct alloced_page *ap = alloced_page_get(page);
 
-			alloced_page_forget(ap);
+			alloced_page_remove(ap);
 
 			__free_pages(page, ap->order);
 			return 0;
