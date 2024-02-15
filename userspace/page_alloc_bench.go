@@ -96,7 +96,7 @@ func run(ctx context.Context, allocOrder int) (map[string][]int64, error) {
 	eg.Go(func() error {
 		kallocfreeResult, err := kallocFree.Run(ctx)
 		if err != nil {
-			return err
+			return fmt.Errorf("kallocfree sub-workload: %v", err)
 		}
 		result[kernelAllocFailuresPrefix] = []int64{int64(kallocfreeResult.AllocFailures)}
 		result[kernelPageAllocsPrefix] = []int64{int64(kallocfreeResult.PagesAllocated)}

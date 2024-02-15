@@ -148,7 +148,7 @@ func (w *Workload) runCPU(ctx context.Context, cpu int) error {
 		// Free down to target.
 		for len(pages) > target {
 			if err := w.kmod.FreePage(pages[0]); err != nil {
-				return fmt.Errorf("freeing page: %v\n", err)
+				return fmt.Errorf("freeing page: %v", err)
 			}
 			pages = pages[1:]
 		}
