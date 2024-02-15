@@ -130,6 +130,11 @@ func (w *Workload) runCPU(ctx context.Context, cpu int) error {
 		for len(pages) < target {
 			page, err := w.allocPageOnCPU(ctx, w.order, cpu)
 			if err != nil {
+				if ctx.Err() != nil {
+					// Don't care about this error, and it's
+					// probably context.Canceled anyway.
+					return nil
+				}
 				return err
 			}
 			pages = append(pages, page)
