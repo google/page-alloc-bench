@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"runtime/debug"
 	"slices"
 	"strconv"
 	"strings"
@@ -185,7 +186,21 @@ func writeOutput(path string, result map[string][]int64) error {
 	return os.WriteFile(path, output, 0644)
 }
 
+func version() string {
+	info, ok := debug.ReadBuildInfo()
+	if ok {
+		for _, setting := range info.Settings {
+			if setting.Key == "vcs.revision" {
+				return setting.Value
+			}
+		}
+	}
+	return "<no vcs.revision in Go build info>"
+}
+
 func doMain() error {
+	fmt.Printf("page_alloc_bench built from version: %v\n", version())
+
 	ctx := context.Background()
 	if *timeoutSFlag != 0 {
 		var cancel context.CancelFunc
