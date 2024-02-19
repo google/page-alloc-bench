@@ -138,8 +138,13 @@ static long pab_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		}
 		case PAB_IOCTL_FREE_PAGE: {
 			struct page *page = (struct page *)arg;
-			struct alloced_page *ap = alloced_page_get(page);
+			struct alloced_page *ap;
 
+			if (WARN(!pfn_valid(page_to_pfn(page)), "Bad PFN %d (page %px)",
+					page_to_pfn(page), page))
+				return -EINVAL;
+
+			ap = alloced_page_get(page);
 			alloced_page_remove(ap);
 
 			__free_pages(page, ap->order);
