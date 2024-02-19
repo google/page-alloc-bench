@@ -118,7 +118,7 @@ func (w *Workload) runCPU(ctx context.Context, cpu int) error {
 		// Pattern is to allocate and free in alternate bursts while
 		// keeping the overall number of allocated pages bouncing around
 		// a roughly stable "middle" value.
-		middle := 50000 >> w.order
+		middle := 1000
 		var target int
 		if random.Uint32()%2 == 0 {
 			target = middle + (int(random.Uint64() % 1000))
