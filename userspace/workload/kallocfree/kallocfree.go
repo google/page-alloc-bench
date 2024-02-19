@@ -83,7 +83,7 @@ func (w *Workload) setup(ctx context.Context) error {
 	// Read some data to populate the page cache a bit.
 	f, err := os.Open(w.testDataPath)
 	if err != nil {
-		return fmt.Errorf("opening data to fill page cache: %v")
+		return fmt.Errorf("opening data to fill page cache: %v", err)
 	}
 	fmt.Printf("Reading %v\n", w.testDataPath)
 	_, err = io.Copy(io.Discard, f)
