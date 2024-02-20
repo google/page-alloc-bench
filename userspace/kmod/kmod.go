@@ -17,6 +17,7 @@
 package kmod
 
 import (
+	"flag"
 	"os"
 	"time"
 	"unsafe"
@@ -30,9 +31,13 @@ import (
 #include "page_alloc_bench.h"
 
 const uintptr_t pab_ioctl_alloc_page = PAB_IOCTL_ALLOC_PAGE;
+const uintptr_t pab_ioctl_free_page_legacy = PAB_IOCTL_FREE_PAGE_LEGACY;
 const uintptr_t pab_ioctl_free_page = PAB_IOCTL_FREE_PAGE;
 */
 import "C"
+
+var legacyFreePageInterface = flag.Bool("kmod-legacy-free-page", false,
+	"[Google hack] kmod is out of date, uses FREE_PAGE interface")
 
 // Connection is a connection to a loaded kernel module.
 type Connection struct {
@@ -62,13 +67,19 @@ func (k *Connection) AllocPage(order int) (*Page, error) {
 	}, err
 }
 
-// FreePage frees a page. Returns the latency.
-func (k *Connection) FreePage(page *Page) (time.Duration, error) {
+// FreePage frees a page. Returns the latency, if the kmods supports it.
+// TODO: Make it not a pointer once the kmod always support it.
+func (k *Connection) FreePage(page *Page) (*time.Duration, error) {
+	if *legacyFreePageInterface {
+		return nil, linux.Ioctl(k.File, C.pab_ioctl_free_page, uintptr(page.id))
+	}
+
 	var ioctl C.struct_pab_ioctl_free_page
 	ioctl.args.id = page.id
 	err := linux.Ioctl(k.File, C.pab_ioctl_free_page, uintptr(unsafe.Pointer(&ioctl)))
 	if err != nil {
-		return time.Duration(0), err
+		return nil, err
 	}
-	return time.Duration(ioctl.result.latency_ns) * time.Nanosecond, nil
+	d := time.Duration(ioctl.result.latency_ns) * time.Nanosecond
+	return &d, nil
 }

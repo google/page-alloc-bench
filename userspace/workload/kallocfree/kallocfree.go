@@ -210,7 +210,9 @@ func (w *Workload) freePageOnCPU(cpu int, page *kmod.Page) error {
 		return err
 	}
 	w.stats.pagesFreed.Add(1)
-	recordLatency(&w.stats.freeLatencies[cpu], latency)
+	if latency != nil {
+		recordLatency(&w.stats.freeLatencies[cpu], *latency)
+	}
 	return nil
 }
 
