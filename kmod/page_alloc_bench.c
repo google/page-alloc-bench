@@ -136,8 +136,7 @@ static long pab_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 			int err;
 			ktime_t start;
 
-			err = copy_from_user(&ioctl, (void *)arg,
-					     sizeof(struct pab_ioctl_alloc_page));
+			err = copy_from_user(&ioctl, (void *)arg, sizeof(ioctl));
 			if (err)
 				return err;
 
