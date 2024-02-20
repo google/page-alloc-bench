@@ -150,10 +150,15 @@ static long pab_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 			__free_pages(page, ap->order);
 			return 0;
 		}
-		default:
-			pr_err("Invalid page_alloc_bench ioctl 0x%x (valid example cmds: 0x%lx, 0x%lx)\n",
-				cmd, PAB_IOCTL_ALLOC_PAGE, PAB_IOCTL_FREE_PAGE);
+		default: {
+			pr_err("Invalid page_alloc_bench ioctl 0x%x - "
+			 	"dir 0x%x type 0x%x nr 0x%x size 0x%x "
+				"(valid example cmds: 0x%lx, 0x%lx)\n",
+				cmd,
+				_IOC_DIR(cmd), _IOC_TYPE(cmd), _IOC_NR(cmd), _IOC_SIZE(cmd),
+				PAB_IOCTL_ALLOC_PAGE, PAB_IOCTL_FREE_PAGE);
 			return -EINVAL;
+		}
 	}
 }
 
