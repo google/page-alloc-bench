@@ -47,6 +47,7 @@ var (
 	kernelPageAllocsPrefix           = "kernel_page_allocs"
 	kernelPageAllocsRemotePrefix     = "kernel_page_allocs_remote"
 	kernelPageAllocLatenciesNSPrefix = "kernel_page_alloc_latencies_ns"
+	kernelPageFreeLatenciesNSPrefix  = "kernel_page_free_latencies_ns"
 )
 
 // Runs findlimit workload @iterations times, returns available byte counts.
@@ -103,10 +104,15 @@ func run(ctx context.Context, allocOrder int) (map[string][]int64, error) {
 		result[kernelPageAllocsPrefix] = []int64{int64(kallocfreeResult.PagesAllocated)}
 		result[kernelPageAllocsRemotePrefix] = []int64{int64(kallocfreeResult.NUMARemoteAllocations)}
 		var ls []int64
-		for _, l := range kallocfreeResult.Latencies {
+		for _, l := range kallocfreeResult.AllocLatencies {
 			ls = append(ls, l.Nanoseconds())
 		}
 		result[kernelPageAllocLatenciesNSPrefix] = ls
+		ls = []int64{}
+		for _, l := range kallocfreeResult.FreeLatencies {
+			ls = append(ls, l.Nanoseconds())
+		}
+		result[kernelPageFreeLatenciesNSPrefix] = ls
 		return nil
 	})
 	fmt.Printf("Waiting for kallocfree to reach steady state...\n")

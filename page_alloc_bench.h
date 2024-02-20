@@ -31,6 +31,17 @@ struct pab_ioctl_alloc_page {
 		long latency_ns;
 	} result;
 };
-#define PAB_IOCTL_ALLOC_PAGE	_IOWR(PAB_IOCTL_BASE, 1, struct pab_ioctl_alloc_page)
+#define PAB_IOCTL_ALLOC_PAGE _IOWR(PAB_IOCTL_BASE, 1, struct pab_ioctl_alloc_page)
 
-#define PAB_IOCTL_FREE_PAGE	_IOR(PAB_IOCTL_BASE, 2, struct page *)
+/* TODO: Remove this (hack for Google-internal maintanenance). */
+#define PAB_IOCTL_FREE_PAGE_LEGACY _IOR(PAB_IOCTL_BASE, 2, struct page *)
+
+struct pab_ioctl_free_page {
+	struct {
+		unsigned long id;
+	} args;
+	struct {
+		long latency_ns;
+	} result;
+};
+#define PAB_IOCTL_FREE_PAGE _IOWR(PAB_IOCTL_BASE, 3, struct pab_ioctl_free_page)

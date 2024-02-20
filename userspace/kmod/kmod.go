@@ -62,7 +62,13 @@ func (k *Connection) AllocPage(order int) (*Page, error) {
 	}, err
 }
 
-// FreePage frees a page.
-func (k *Connection) FreePage(page *Page) error {
-	return linux.Ioctl(k.File, C.pab_ioctl_free_page, uintptr(page.id))
+// FreePage frees a page. Returns the latency.
+func (k *Connection) FreePage(page *Page) (time.Duration, error) {
+	var ioctl C.struct_pab_ioctl_free_page
+	ioctl.args.id = page.id
+	err := linux.Ioctl(k.File, C.pab_ioctl_free_page, uintptr(unsafe.Pointer(&ioctl)))
+	if err != nil {
+		return time.Duration(0), err
+	}
+	return time.Duration(ioctl.result.latency_ns) * time.Nanosecond, nil
 }

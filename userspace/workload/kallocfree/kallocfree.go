@@ -48,7 +48,8 @@ type stats struct {
 	pagesFreed            atomic.Uint64
 	allocFailures         atomic.Uint64
 	numaRemoteAllocations atomic.Uint64
-	latencies             [][]time.Duration // Per CPU worker.
+	allocLatencies        [][]time.Duration // Per CPU worker.
+	freeLatencies         [][]time.Duration // Per CPU worker.
 }
 
 type Result struct {
@@ -56,7 +57,8 @@ type Result struct {
 	PagesAllocated        uint64 // Only incremented; subtract pagesFreed to count leaks.
 	PagesFreed            uint64
 	NUMARemoteAllocations uint64          // Number of pages where page NID didn't match CPU's NID.
-	Latencies             []time.Duration // Excludes userspace/syscall overhead. We only capture the last N allocations.
+	AllocLatencies        []time.Duration // Excludes userspace/syscall overhead. We only capture the last N allocations.
+	FreeLatencies         []time.Duration
 }
 
 func (s *stats) String() string {
@@ -91,8 +93,6 @@ func (w *Workload) setup(ctx context.Context) error {
 	return err
 }
 
-var freeErrorLogged = false
-
 // per-CPU element of a workload. Assumes that the calling goroutine is already
 // pinned to an appropriate CPU.
 func (w *Workload) runCPU(ctx context.Context, cpu int) error {
@@ -100,12 +100,7 @@ func (w *Workload) runCPU(ctx context.Context, cpu int) error {
 
 	defer func() {
 		for _, page := range pages {
-			if err := w.kmod.FreePage(page); err != nil && !freeErrorLogged {
-				// The kmod also frees on rmmod so it might be OK.
-				fmt.Fprintf(os.Stderr, "Couldn't free one or more kernel pages, consider rebooting: %v\n", err)
-				freeErrorLogged = true
-			}
-			w.stats.pagesFreed.Add(1)
+			w.freePageOnCPU(cpu, page)
 		}
 	}()
 
@@ -152,7 +147,7 @@ func (w *Workload) runCPU(ctx context.Context, cpu int) error {
 
 		// Free down to target.
 		for len(pages) > target {
-			if err := w.kmod.FreePage(pages[0]); err != nil {
+			if err := w.freePageOnCPU(cpu, pages[0]); err != nil {
 				return fmt.Errorf("freeing page: %v", err)
 			}
 			pages = pages[1:]
@@ -160,6 +155,15 @@ func (w *Workload) runCPU(ctx context.Context, cpu int) error {
 	}
 
 	return nil
+}
+
+// Record a latency. We don't have a proper sampling statetgy we just pick the
+// last N latencies.
+func recordLatency(latencies *[]time.Duration, latency time.Duration) {
+	*latencies = append(*latencies, latency)
+	if len(*latencies) > 50000 {
+		*latencies = (*latencies)[1:]
+	}
 }
 
 // Allocate a page, update stats. Caller must be running on the stated CPU.
@@ -190,12 +194,24 @@ func (w *Workload) allocPageOnCPU(ctx context.Context, order int, cpu int) (*kmo
 	if page.NID != w.cpuToNode[cpu] {
 		w.stats.numaRemoteAllocations.Add(1)
 	}
-	l := &w.stats.latencies[cpu]
-	*l = append(*l, page.Latency)
-	if len(*l) > 50000 {
-		*l = (*l)[1:]
-	}
+	recordLatency(&w.stats.allocLatencies[cpu], page.Latency)
 	return page, nil
+}
+
+var freeErrorLogged = false
+
+// Free a page, update stats. Caller must be running on the stated CPU.
+func (w *Workload) freePageOnCPU(cpu int, page *kmod.Page) error {
+	latency, err := w.kmod.FreePage(page)
+	if err != nil && !freeErrorLogged {
+		// The kmod also frees on rmmod so it might be OK.
+		fmt.Fprintf(os.Stderr, "Couldn't free one or more kernel pages, consider rebooting: %v\n", err)
+		freeErrorLogged = true
+		return err
+	}
+	w.stats.pagesFreed.Add(1)
+	recordLatency(&w.stats.freeLatencies[cpu], latency)
+	return nil
 }
 
 // Run runs the workload. This workload runs continuously until cancellation,
@@ -238,7 +254,8 @@ func (w *Workload) Run(ctx context.Context) (*Result, error) {
 		PagesAllocated:        w.stats.pagesAllocated.Load(),
 		PagesFreed:            w.stats.pagesFreed.Load(),
 		NUMARemoteAllocations: w.stats.numaRemoteAllocations.Load(),
-		Latencies:             slices.Concat(w.stats.latencies...),
+		AllocLatencies:        slices.Concat(w.stats.allocLatencies...),
+		FreeLatencies:         slices.Concat(w.stats.freeLatencies...),
 	}
 	return &r, nil
 }
@@ -278,7 +295,8 @@ func New(ctx context.Context, opts *Options) (*Workload, error) {
 	return &Workload{
 		kmod: &kmod,
 		stats: &stats{
-			latencies: make([][]time.Duration, runtime.NumCPU()),
+			allocLatencies: make([][]time.Duration, runtime.NumCPU()),
+			freeLatencies:  make([][]time.Duration, runtime.NumCPU()),
 		},
 		pagesPerCPU:        opts.TotalMemory.Pages() / int64(runtime.NumCPU()),
 		testDataPath:       opts.TestDataPath,

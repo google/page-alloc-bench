@@ -68,6 +68,7 @@ there as JSON. Fields are:
 - `kernel_page_alloc_latencies_ns`: Sample of latencies for the kernel
   allocation call. This is just the last N samples, no proper sampling logic is
   implemented.
+- `kernel_page_free_latencies_ns`: Same as above, but measuring frees.
 
 If you set `--alloc-orders` to contain multiple values (this is the default),
 the benchmark is repeated for each of the listed orders. The order is used as

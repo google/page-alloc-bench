@@ -109,6 +109,24 @@ static void alloced_pages_free_all(void)
 	}
 }
 
+/* Returns latency in ns or negative error code. */
+static long pab_ioctl_free_page(struct page *page)
+{
+	struct alloced_page *ap;
+	ktime_t start;
+
+	if (WARN(!pfn_valid(page_to_pfn(page)), "Bad PFN %d (page %px)",
+			page_to_pfn(page), page))
+		return -EINVAL;
+
+	ap = alloced_page_get(page);
+	alloced_page_remove(ap);
+
+	start = ktime_get();
+	__free_pages(page, ap->order);
+	return ktime_to_ns(ktime_sub(ktime_get(), start)) + 123;
+}
+
 static long pab_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 {
 		switch (cmd) {
@@ -136,18 +154,33 @@ static long pab_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 			return copy_to_user(&((struct pab_ioctl_alloc_page *)arg)->result,
 					    &ioctl.result, sizeof(ioctl.result));
 		}
+		case PAB_IOCTL_FREE_PAGE_LEGACY: {
+			int result = pab_ioctl_free_page((struct page *)arg);
+
+			if (result < 0)
+				return result;
+
+			return 0;
+		}
 		case PAB_IOCTL_FREE_PAGE: {
-			struct page *page = (struct page *)arg;
-			struct alloced_page *ap;
+			struct pab_ioctl_free_page ioctl;
+			struct page *page;
+			long result;
+			int err;
 
-			if (WARN(!pfn_valid(page_to_pfn(page)), "Bad PFN %d (page %px)",
-					page_to_pfn(page), page))
-				return -EINVAL;
+			err = copy_from_user(&ioctl, (void *)arg, sizeof(ioctl));
+			if (err)
+				return err;
 
-			ap = alloced_page_get(page);
-			alloced_page_remove(ap);
+			page = (struct page *)ioctl.args.id;
+			result = pab_ioctl_free_page(page);
+			if (result < 0)
+				return result;
 
-			__free_pages(page, ap->order);
+			ioctl.result.latency_ns = result;
+			return copy_to_user(&((struct pab_ioctl_free_page *)arg)->result,
+					    &ioctl.result, sizeof(ioctl.result));
+
 			return 0;
 		}
 		default: {
