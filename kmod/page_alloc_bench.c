@@ -115,7 +115,7 @@ static long pab_ioctl_free_page(struct page *page)
 	struct alloced_page *ap;
 	ktime_t start;
 
-	if (WARN(!pfn_valid(page_to_pfn(page)), "Bad PFN %d (page %px)",
+	if (WARN(!pfn_valid(page_to_pfn(page)), "Bad PFN %lu (page %px)",
 			page_to_pfn(page), page))
 		return -EINVAL;
 
