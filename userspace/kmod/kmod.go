@@ -71,7 +71,7 @@ func (k *Connection) AllocPage(order int) (*Page, error) {
 // TODO: Make it not a pointer once the kmod always support it.
 func (k *Connection) FreePage(page *Page) (*time.Duration, error) {
 	if *legacyFreePageInterface {
-		return nil, linux.Ioctl(k.File, C.pab_ioctl_free_page, uintptr(page.id))
+		return nil, linux.Ioctl(k.File, C.pab_ioctl_free_page_legacy, uintptr(page.id))
 	}
 
 	var ioctl C.struct_pab_ioctl_free_page
