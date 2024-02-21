@@ -178,8 +178,10 @@ func printResult(result map[string][]int64) {
 		val := result[key]
 		if len(val) > 1 {
 			printAverages(key, val)
-		} else {
+		} else if len(val) > 0 {
 			fmt.Printf("%q: %v\n", key, val[0])
+		} else {
+			fmt.Printf("%q: <no values>\n", key)
 		}
 	}
 }
