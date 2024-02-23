@@ -189,7 +189,7 @@ func printResult(result map[string][]int64) {
 func writeOutput(path string, result map[string][]int64) error {
 	output, err := json.Marshal(result)
 	if err != nil {
-		return fmt.Errorf("marshalling JSON output: %v\n", err)
+		return fmt.Errorf("marshalling JSON output: %v", err)
 	}
 	return os.WriteFile(path, output, 0644)
 }
