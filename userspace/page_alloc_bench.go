@@ -191,6 +191,7 @@ func writeOutput(path string, result map[string][]int64) error {
 	if err != nil {
 		return fmt.Errorf("marshalling JSON output: %v", err)
 	}
+	fmt.Printf("Writing %v JSON result to %s\n", pab.ByteSize(len(output)), path)
 	return os.WriteFile(path, output, 0644)
 }
 
