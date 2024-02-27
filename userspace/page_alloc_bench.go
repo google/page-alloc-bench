@@ -59,7 +59,7 @@ func repeatFindlimit(ctx context.Context, iterations int, desc string) ([]int64,
 		}
 		findlimitResult, err := findlimit.Run(ctx, &findlimit.Options{})
 		if err != nil {
-			return nil, fmt.Errorf("%s findlimit run %d: %v\n", desc, i, err)
+			return nil, fmt.Errorf("%s findlimit run %d: %v", desc, i, err)
 		}
 		fmt.Printf("\tIteration %d/%d: %s available on %s system\n",
 			i, *iterationsFlag, findlimitResult.Allocated, desc)
