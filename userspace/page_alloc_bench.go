@@ -105,7 +105,7 @@ func run(ctx context.Context, allocOrder int) (map[string][]int64, error) {
 		result[kernelAllocFailuresPrefix] = []int64{int64(kallocfreeResult.AllocFailures)}
 		result[kernelPageAllocsPrefix] = []int64{int64(kallocfreeResult.PagesAllocated)}
 		result[kernelPageAllocsRemotePrefix] = []int64{int64(kallocfreeResult.NUMARemoteAllocations)}
-		var ls []int64
+		ls := []int64{}
 		for _, l := range kallocfreeResult.AllocLatencies {
 			ls = append(ls, l.Nanoseconds())
 		}
