@@ -38,6 +38,7 @@ var (
 	outputPathFlag  = flag.String("output-path", "", "File to write JSON results to. See README for specification.")
 	iterationsFlag  = flag.Int("iterations", 5, "Iterations")
 	allocOrdersFlag = flag.String("alloc-orders", "0,4", "Comma-separate list of page alloc orders to test")
+	latenciesFlag   = flag.Bool("latencies", true, "Gather allocation/free latency data. Can be large.")
 )
 
 var (
@@ -76,8 +77,9 @@ func run(ctx context.Context, allocOrder int) (map[string][]int64, error) {
 	// We're not running this just yet, btu set it upt now to fail fast.
 	kernelUsage := 128 * pab.Megabyte
 	kallocFree, err := kallocfree.New(ctx, &kallocfree.Options{
-		TotalMemory: kernelUsage,
-		Order:       allocOrder,
+		TotalMemory:      kernelUsage,
+		Order:            allocOrder,
+		MeasureLatencies: *latenciesFlag,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("setting up kallocfree workload: %v\n", err)

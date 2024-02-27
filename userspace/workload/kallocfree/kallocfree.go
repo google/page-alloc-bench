@@ -38,9 +38,10 @@ import (
 
 type Options struct {
 	// See corresponding cmdline flags for explanation of fields.
-	TotalMemory  pab.ByteSize
-	TestDataPath string
-	Order        int // Allocation order (i.e. alloc_pages arg).
+	TotalMemory      pab.ByteSize
+	TestDataPath     string
+	Order            int // Allocation order (i.e. alloc_pages arg).
+	MeasureLatencies bool
 }
 
 type stats struct {
@@ -75,6 +76,7 @@ type Workload struct {
 	steadyStateReached chan struct{} // Will be closed when stateStateThreads reaches numThreads
 	cpuToNode          map[int]int
 	order              int
+	measureLatencies   bool
 }
 
 // Run once on the system before each iteration of the workload.
@@ -194,7 +196,9 @@ func (w *Workload) allocPageOnCPU(ctx context.Context, order int, cpu int) (*kmo
 	if page.NID != w.cpuToNode[cpu] {
 		w.stats.numaRemoteAllocations.Add(1)
 	}
-	recordLatency(&w.stats.allocLatencies[cpu], page.Latency)
+	if w.measureLatencies {
+		recordLatency(&w.stats.allocLatencies[cpu], page.Latency)
+	}
 	return page, nil
 }
 
@@ -210,7 +214,7 @@ func (w *Workload) freePageOnCPU(cpu int, page *kmod.Page) error {
 		return err
 	}
 	w.stats.pagesFreed.Add(1)
-	if latency != nil {
+	if w.measureLatencies && latency != nil {
 		recordLatency(&w.stats.freeLatencies[cpu], *latency)
 	}
 	return nil
@@ -306,5 +310,6 @@ func New(ctx context.Context, opts *Options) (*Workload, error) {
 		numThreads:         runtime.NumCPU(),
 		cpuToNode:          cpuToNode,
 		order:              opts.Order,
+		measureLatencies:   opts.MeasureLatencies,
 	}, nil
 }
