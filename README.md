@@ -29,10 +29,16 @@ If you like to live dangerously, build against your current kernel with just
 
 To run on another system, use `make KDIR=$KERNEL_TREE`. If that kernel was built
 with clang add `LLVM=1`. In theory I think you should only have to have done
-`make modules prepare` in your kernel tree but in practice I've found you
+kperf/page_alloc_bench: Update metrics
+`make modules_prepare` in your kernel tree but in practice I've found you
 sometimes have to completely build the kernel for this to work (this issue might
 be unique to Google's kernel fork though). Cross-compilation for other arches
 isn't supported (I probably shouldn't have used Go...).
+
+This hasn't been tested extensively against a wide range of kernel versions. If
+you're in the future or you have a very old kernel, you might get build failures
+in the kernel module. In that case feel free to send a pull request adding `#if
+LINUX_VERSION_CODE > KERNEL_VERSION(6, 7, 0)` blocks.
 
 When you're using a full kernel tree via `KDIR` you can also build the
 `kmod/compile_commands.json` target to make clangd work on the kmod code.
@@ -51,7 +57,7 @@ there as JSON. Fields are:
 - `idle_available_bytes`: This workload attempts to allocate as much memory as
   possible from userspace. It then does this again while simultaneously
   allocating then freeing kernel pages on all CPUs. This metric reports how much
-  it was able to allocate the second time. You don't want this number to go
+  it was able to allocate the first time. You don't want this number to go
   down. The allocation is repeated, this field has one item for each iteration.
 - `antagonized_available_bytes`: This is like `idle_available_bytes`, but it's
   measured while an antagonistic kernel allocation workload runs in the
@@ -72,7 +78,7 @@ there as JSON. Fields are:
 
 If you set `--alloc-orders` to contain multiple values (this is the default),
 the benchmark is repeated for each of the listed orders. The order is used as
-the argument to alloc_pages in the kernel-allocation aspect of the workload
+the argument to `alloc_pages` in the kernel-allocation aspect of the workload
 (i.e. we allocate pages of size 2^order), but doesn't influence the userspace
 allocation part. When you do this, metric names are suffied with `_order$n`.
 
