@@ -1,4 +1,5 @@
 KDIR ?= /lib/modules/`uname -r`/build
+MAKESELF ?= makeself
 
 go_binaries = userspace/page_alloc_bench userspace/workload/findlimit/child/child
 all: $(go_binaries) kmod/page_alloc_bench.ko
@@ -12,7 +13,7 @@ all: $(go_binaries) kmod/page_alloc_bench.ko
 # that the embedded script runs, so without it this won't work on systems where
 # '.' is not in $PATH.
 page_alloc_bench.run: $(addprefix .makeself-build/, run.sh kmod/page_alloc_bench.ko $(go_binaries))
-	makeself .makeself-build page_alloc_bench.run "page_alloc_bench" ./run.sh
+	$(MAKESELF) .makeself-build page_alloc_bench.run "page_alloc_bench" ./run.sh
 
 .PHONY: kmod/page_alloc_bench.ko # Let kbuild decide the dependencies.
 kmod/page_alloc_bench.ko:
