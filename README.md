@@ -71,9 +71,8 @@ there as JSON. Fields are:
   suspicion.
 - `kernel_page_allocs_remote`: Of the above, the number of pages that came from
   a remote NUMA node.
-- `kernel_page_alloc_latencies_ns`: Sample of latencies for the kernel
-  allocation call. This is just the last N samples, no proper sampling logic is
-  implemented.
+- `kernel_page_alloc_latencies_ns`: Uniform sample of latencies for the kernel
+  allocation call.
 - `kernel_page_free_latencies_ns`: Same as above, but measuring frees.
 
 If you set `--alloc-orders` to contain multiple values (this is the default),

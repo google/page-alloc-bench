@@ -25,7 +25,6 @@ import (
 	"math/rand"
 	"os"
 	"runtime"
-	"slices"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -33,6 +32,7 @@ import (
 	"github.com/google/page_alloc_bench/kmod"
 	"github.com/google/page_alloc_bench/linux"
 	"github.com/google/page_alloc_bench/pab"
+	"github.com/google/page_alloc_bench/sampling"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -49,8 +49,8 @@ type stats struct {
 	pagesFreed            atomic.Uint64
 	allocFailures         atomic.Uint64
 	numaRemoteAllocations atomic.Uint64
-	allocLatencies        [][]time.Duration // Per CPU worker.
-	freeLatencies         [][]time.Duration // Per CPU worker.
+	allocLatencies        []*sampling.Reservoir[time.Duration] // Per CPU worker.
+	freeLatencies         []*sampling.Reservoir[time.Duration] // Per CPU worker.
 }
 
 type Result struct {
@@ -159,15 +159,6 @@ func (w *Workload) runCPU(ctx context.Context, cpu int) error {
 	return nil
 }
 
-// Record a latency. We don't have a proper sampling statetgy we just pick the
-// last N latencies.
-func recordLatency(latencies *[]time.Duration, latency time.Duration) {
-	*latencies = append(*latencies, latency)
-	if len(*latencies) > 50000 {
-		*latencies = (*latencies)[1:]
-	}
-}
-
 // Allocate a page, update stats. Caller must be running on the stated CPU.
 func (w *Workload) allocPageOnCPU(ctx context.Context, order int, cpu int) (*kmod.Page, error) {
 	// Exponential backoff in case of allocation failures.
@@ -197,7 +188,7 @@ func (w *Workload) allocPageOnCPU(ctx context.Context, order int, cpu int) (*kmo
 		w.stats.numaRemoteAllocations.Add(1)
 	}
 	if w.measureLatencies {
-		recordLatency(&w.stats.allocLatencies[cpu], page.Latency)
+		w.stats.allocLatencies[cpu].Add(page.Latency)
 	}
 	return page, nil
 }
@@ -215,9 +206,18 @@ func (w *Workload) freePageOnCPU(cpu int, page *kmod.Page) error {
 	}
 	w.stats.pagesFreed.Add(1)
 	if w.measureLatencies && latency != nil {
-		recordLatency(&w.stats.freeLatencies[cpu], *latency)
+		w.stats.freeLatencies[cpu].Add(*latency)
 	}
 	return nil
+}
+
+// samples concatenates all the output samples from the given reservoirs.
+func samples[T any](rs []*sampling.Reservoir[T]) []T {
+	var ret []T
+	for _, r := range rs {
+		ret = append(ret, r.Samples()...)
+	}
+	return ret
 }
 
 // Run runs the workload. This workload runs continuously until cancellation,
@@ -260,8 +260,8 @@ func (w *Workload) Run(ctx context.Context) (*Result, error) {
 		PagesAllocated:        w.stats.pagesAllocated.Load(),
 		PagesFreed:            w.stats.pagesFreed.Load(),
 		NUMARemoteAllocations: w.stats.numaRemoteAllocations.Load(),
-		AllocLatencies:        slices.Concat(w.stats.allocLatencies...),
-		FreeLatencies:         slices.Concat(w.stats.freeLatencies...),
+		AllocLatencies:        samples(w.stats.allocLatencies),
+		FreeLatencies:         samples(w.stats.freeLatencies),
 	}
 	return &r, nil
 }
@@ -273,6 +273,14 @@ func (w *Workload) AwaitSteadyState(ctx context.Context) {
 	case <-ctx.Done():
 	case <-w.steadyStateReached:
 	}
+}
+
+func reservoirPerCPU(size int) []*sampling.Reservoir[time.Duration] {
+	r := make([]*sampling.Reservoir[time.Duration], runtime.NumCPU())
+	for i := 0; i < len(r); i++ {
+		r[i] = sampling.NewReservoir[time.Duration](size)
+	}
+	return r
 }
 
 func New(ctx context.Context, opts *Options) (*Workload, error) {
@@ -301,8 +309,8 @@ func New(ctx context.Context, opts *Options) (*Workload, error) {
 	return &Workload{
 		kmod: &kmod,
 		stats: &stats{
-			allocLatencies: make([][]time.Duration, runtime.NumCPU()),
-			freeLatencies:  make([][]time.Duration, runtime.NumCPU()),
+			allocLatencies: reservoirPerCPU(50000),
+			freeLatencies:  reservoirPerCPU(50000),
 		},
 		pagesPerCPU:        opts.TotalMemory.Pages() / int64(runtime.NumCPU()),
 		testDataPath:       opts.TestDataPath,
