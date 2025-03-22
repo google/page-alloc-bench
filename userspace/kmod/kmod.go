@@ -56,7 +56,7 @@ type Page struct {
 func (k *Connection) AllocPage(order int) (*Page, error) {
 	var ioctl C.struct_pab_ioctl_alloc_page
 	ioctl.args.order = C.int(order)
-	err := linux.Ioctl(k.File, C.pab_ioctl_alloc_page, uintptr(unsafe.Pointer(&ioctl)))
+	err := linux.Ioctl(k.File, uintptr(C.pab_ioctl_alloc_page), uintptr(unsafe.Pointer(&ioctl)))
 	if err != nil {
 		return nil, err
 	}
@@ -71,12 +71,12 @@ func (k *Connection) AllocPage(order int) (*Page, error) {
 // TODO: Make it not a pointer once the kmod always support it.
 func (k *Connection) FreePage(page *Page) (*time.Duration, error) {
 	if *legacyFreePageInterface {
-		return nil, linux.Ioctl(k.File, C.pab_ioctl_free_page_legacy, uintptr(page.id))
+		return nil, linux.Ioctl(k.File, uintptr(C.pab_ioctl_free_page_legacy), uintptr(page.id))
 	}
 
 	var ioctl C.struct_pab_ioctl_free_page
 	ioctl.args.id = page.id
-	err := linux.Ioctl(k.File, C.pab_ioctl_free_page, uintptr(unsafe.Pointer(&ioctl)))
+	err := linux.Ioctl(k.File, uintptr(C.pab_ioctl_free_page), uintptr(unsafe.Pointer(&ioctl)))
 	if err != nil {
 		return nil, err
 	}
