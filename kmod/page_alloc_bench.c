@@ -22,6 +22,7 @@
 #include <linux/module.h>
 #include <linux/proc_fs.h>
 #include <linux/uaccess.h>
+#include <linux/version.h>
 
 #include "page_alloc_bench.h"
 
@@ -179,7 +180,10 @@ static long pab_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 static struct proc_ops proc_ops = {
 	.proc_ioctl = pab_ioctl,
 	.proc_open = nonseekable_open,
+/* See Linux commit 868941b14441 ("fs: remove no_llseek") */
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 0, 0)
 	.proc_lseek = no_llseek,
+#endif
 };
 
 static struct proc_dir_entry *procfs_file;
