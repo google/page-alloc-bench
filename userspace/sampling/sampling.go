@@ -44,5 +44,9 @@ func (r *Reservoir[T]) Add(datum T) {
 // Samples returns, at any given time, a random sample of the data passed to
 // Add. The result is read-only.
 func (r *Reservoir[T]) Samples() []T {
-	return r.outSamples[:r.numInSamples]
+	n := r.numInSamples
+	if n > len(r.outSamples) {
+		n = len(r.outSamples)
+	}
+	return r.outSamples[:n]
 }
