@@ -36,6 +36,10 @@ import (
 var (
 	initAllocSize = flag.Int("init-alloc-size", 0, "Size of initial up-front alloc. Optional.")
 	allocSize     = flag.Int("alloc-size", 0, "Size of subsequent individual allocs.")
+	// Make this bigger to reduce the number of syscalls and speed the benchmark
+	// up. Make it smaller to make the benchmark work on teeny weeny leedle
+	// computers. The code below assumes it's a multiple of the page size.
+	mmapSize = flag.Int("mmap-size-gib", 8, "Size to mmap in GiB")
 )
 
 func mmap(size int) ([]byte, error) {
@@ -69,13 +73,11 @@ func doMain() error {
 	}()
 
 	for {
-		// Make this bigger to reduce the number of syscalls and speed the benchmark
-		// up. Make it smaller to make the benchmark work on teeny weeny leedle
-		// computers. The code below assumes it's a multiple of the page size.
-		const mmapSize = 8 * pab.Gigabyte
+		var mmapSize = pab.ByteSize(*mmapSize) * pab.Gigabyte
 		data, err := mmap(int(mmapSize.Bytes()))
 		if err != nil {
-			log.Fatalf("mmap(%s) failed. Computer too teeny? /proc/sys/vm/overcommit_memory set to 2? %v",
+			log.Fatalf("mmap(%s) failed. Computer too teeny? /proc/sys/vm/overcommit_memory set to 2? "+
+				"Try --findlimit-mmap-size-gib to ensmallen this mmap. %v",
 				mmapSize, err)
 		}
 

@@ -34,11 +34,12 @@ import (
 )
 
 var (
-	timeoutSFlag    = flag.Int("timeout-s", 0, "Timeout in seconds. Set 0 for no timeout (default)")
-	outputPathFlag  = flag.String("output-path", "", "File to write JSON results to. See README for specification.")
-	iterationsFlag  = flag.Int("iterations", 5, "Iterations")
-	allocOrdersFlag = flag.String("alloc-orders", "0,4", "Comma-separate list of page alloc orders to test")
-	latenciesFlag   = flag.Bool("latencies", true, "Gather allocation/free latency data. Can be large.")
+	timeoutSFlag          = flag.Int("timeout-s", 0, "Timeout in seconds. Set 0 for no timeout (default)")
+	outputPathFlag        = flag.String("output-path", "", "File to write JSON results to. See README for specification.")
+	iterationsFlag        = flag.Int("iterations", 5, "Iterations")
+	allocOrdersFlag       = flag.String("alloc-orders", "0,4", "Comma-separate list of page alloc orders to test")
+	latenciesFlag         = flag.Bool("latencies", true, "Gather allocation/free latency data. Can be large.")
+	findlimitMmapSizeFlag = flag.Int("findlimit-mmap-size-gib", 0, "Size of mmap to use in findlimit interlal workload, in GiB")
 )
 
 var (
@@ -58,7 +59,9 @@ func repeatFindlimit(ctx context.Context, iterations int, desc string) ([]int64,
 		if ctx.Err() != nil {
 			return nil, nil
 		}
-		findlimitResult, err := findlimit.Run(ctx, &findlimit.Options{})
+		findlimitResult, err := findlimit.Run(ctx, &findlimit.Options{
+			MmapSizeGiB: *findlimitMmapSizeFlag,
+		})
 		if err != nil {
 			return nil, fmt.Errorf("%s findlimit run %d: %v", desc, i, err)
 		}

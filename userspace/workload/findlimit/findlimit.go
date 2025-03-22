@@ -32,7 +32,9 @@ import (
 )
 
 type Options struct {
-	AllocSize pab.ByteSize // Optional.
+	// See definition of corresponding flags in the child process code for details.
+	AllocSize   pab.ByteSize // Optional.
+	MmapSizeGiB int          // Optional
 }
 
 type Result struct {
@@ -61,7 +63,11 @@ func Run(ctx context.Context, opts *Options) (*Result, error) {
 	if size == pab.ByteSize(0) {
 		size = 128 * pab.Megabyte
 	}
-	cmd := exec.CommandContext(ctx, path, fmt.Sprintf("--alloc-size=%d", size.Bytes()))
+	args := []string{fmt.Sprintf("--alloc-size=%d", size.Bytes())}
+	if opts.MmapSizeGiB != 0 {
+		args = append(args, fmt.Sprintf("--mmap-size-gib=%d", opts.MmapSizeGiB))
+	}
+	cmd := exec.CommandContext(ctx, path, args...)
 	cmd.Stderr = os.Stderr
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
